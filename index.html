@@ -286,7 +286,31 @@ const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"want
    SPEED game-seconds, so every threshold keeps its real value and simply
    arrives sooner. */
 const SPEED=1;
-const STEPS_PER_MIN=2, START_STEPS=31, XP_PER_MIN=20;
+/* How far you can walk is a curve, not a line, and the difference is the
+   whole economy. Two steps a minute against an 885-step Kanto meant the budget
+   stopped binding after seven hours — under two per cent of the game — and
+   "You are too tired to walk this far" was never seen again. Anything linear
+   saturates against a finite map; the only question is when.
+
+   A square root keeps the first evening generous and makes the far corners
+   expensive for ever. The rate is set against the unlock ladder rather than
+   against the map, because they are the same constraint and the ladder is the
+   one you feel: at 40 + 16*sqrt(minutes) VIRIDIAN is eight minutes away — a
+   little quicker than the old two-a-minute — PEWTER is six hours, and then
+   STRENGTH at 25, CUT at 40, SURF at 54 and the SAFFRON guards at 67. A
+   milestone every few weeks through the first fifth of the game, where before
+   the whole ladder was finished by the second evening.
+
+   Steeper than this and CUT lands 120 hours in, which leaves you on a quarter
+   of Kanto for a third of the game. Shallower and it saturates again.
+
+   The step budget is a radius from PALLET TOWN measured along real ground, so
+   it can only ever creep out along routes you could actually walk. It is never
+   spent: what you have reached, you have reached. */
+const START_STEPS=40, STEP_K=16, XP_PER_MIN=20;
+const stepsAt = m => Math.floor(START_STEPS + STEP_K*Math.sqrt(Math.max(0,m)));
+const minutesFor = s => s<=START_STEPS
+  ? 0 : Math.ceil(Math.pow((s-START_STEPS)/STEP_K, 2));
 const ROLL_MIN=15, SLOT_AT=[15,60,120], GRACE_MS=10000;
 const BALL_AT=[0,60,120];          /* extra legendary ball per 15 min, at these minutes */
 const BALL_ODDS=0.14;              /* one Ultra Ball at an almost-fainted legendary */
@@ -382,7 +406,7 @@ function load(){
 function persist(){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(S)); }catch(e){} }
 /* The sandbox build is for testing: nothing is ever out of range and every HM
    works, but the givers still play their scene so the interactions can be seen. */
-const budget = () => SANDBOX ? 1e9 : START_STEPS + S.minutes*STEPS_PER_MIN;
+const budget = () => SANDBOX ? 1e9 : stepsAt(S.minutes);
 /* Oak's upgrades multiply experience and nothing else. In a real game the
    things you fight get stronger as you go, so a strong Pokemon levels no
    slower than a weak one did; nothing here gets stronger, so the curve just
@@ -1161,7 +1185,9 @@ function paintSession(){
       : "Quiet ground. You are banking steps.";
   }
   const led=lead();
-  $("#s-earn").innerHTML="+"+Math.floor(mins)*STEPS_PER_MIN+" STEPS"+
+  /* what this session is worth depends on how far you have already come, so
+     it is the difference between two points on the curve rather than a rate */
+  $("#s-earn").innerHTML="+"+(stepsAt(S.minutes+Math.floor(mins))-stepsAt(S.minutes))+" STEPS"+
     (led? " &middot; +"+Math.floor(mins)*XP_PER_MIN+" EXP TO "+
           dexName(led.sp).toUpperCase() : "");
 }
@@ -1226,12 +1252,14 @@ function endSession(reason,endedAt){
       grew=grew.concat(on);
     }
   }
+  const gainedSteps=stepsAt(S.minutes+mins)-stepsAt(S.minutes);
   S.minutes+=mins; S.sessions++; S.session=null;
   const summoned = oakWants() && !S.oakCall;
   if(summoned) S.oakCall=1;
   persist();
   rebuild(); refreshBar();
   results({mins,kept,fresh,boxed,reason,place:ss.place,mode:ss.mode,summoned,
+           steps:gainedSteps,
            left:ss.mode==="revive" ? heldFossils().length : 0,
            xp:gainedXp,grew,lead:led,legend,balls:ss.balls||0,
            legendName:ss.legendName});
@@ -1299,7 +1327,7 @@ function shut(){ $("#sheet").classList.remove("on"); }
 function closer(){ const b=$("#closebtn"); if(b) b.onclick=shut; }
 
 function results(r){
-  const gained=r.mins*STEPS_PER_MIN;
+  const gained=r.steps;
   let body;
   if(r.mode==="revive"){
     body = r.kept.length
