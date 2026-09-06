@@ -51,13 +51,18 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
    4x supersampled backing store, then one fixed downscale by the browser. Do
    NOT add image-rendering:pixelated — a fractional CSS upscale of a 240px
    canvas is what made the whole screen shimmer while walking. */
-.stage{position:relative;background:#000;line-height:0}
+.stage{position:relative;background:#000;line-height:0;overflow:hidden}
 canvas#cv{display:block;width:100%;height:auto;touch-action:none}
+/* Not display:none — it has to be able to slide out from under you, which
+   nothing can do while it is being removed from the layout outright. */
 .say{position:absolute;left:8px;right:8px;bottom:8px;background:var(--panel-2);
      border:3px solid var(--ink);border-radius:7px;box-shadow:0 0 0 2px var(--panel-2);
      padding:11px 13px 15px;font-family:var(--px);font-size:13.5px;line-height:1.4;
-     color:var(--ink);display:none;white-space:pre-line}
-.say.on{display:block}
+     color:var(--ink);white-space:pre-line;cursor:pointer;
+     visibility:hidden;opacity:0;transform:translateY(calc(100% + 14px));
+     transition:opacity .15s ease, transform .2s ease, visibility 0s .2s}
+.say.on{visibility:visible;opacity:1;transform:none;transition-delay:0s}
+@media (prefers-reduced-motion:reduce){ .say{transition-duration:0s} }
 .say::after{content:"\25BC";position:absolute;right:10px;bottom:4px;font-size:10px;
             color:var(--red);animation:bob 1s steps(2,end) infinite}
 @keyframes bob{50%{transform:translateY(-2px)}}
@@ -83,6 +88,11 @@ canvas#cv{display:block;width:100%;height:auto;touch-action:none}
 .dpad .r{grid-area:2/3;border-radius:0 7px 7px 0}
 .dpad .d{grid-area:3/2;border-radius:0 0 7px 7px}
 .rightpad{display:flex;flex-direction:column;align-items:center;gap:10px}
+.ab{display:flex;align-items:flex-start;gap:9px}
+.bbtn{width:52px;height:52px;margin-top:17px;border-radius:50%;background:var(--void-2);
+      font-family:var(--px);font-size:19px;color:var(--panel);border:3px solid var(--edge);
+      box-shadow:0 4px 0 #23272f;touch-action:none;-webkit-user-select:none;user-select:none}
+.bbtn.on,.bbtn:active{transform:translateY(4px);box-shadow:none;background:var(--edge)}
 .abtn{width:62px;height:62px;border-radius:50%;background:var(--gold);
       font-family:var(--px);font-size:22px;color:#241b04;border:3px solid #a4761f;
       box-shadow:0 4px 0 #8d6519}
@@ -218,7 +228,10 @@ textarea{width:100%;height:76px;margin-top:9px;padding:9px;border-radius:8px;
       <button class="d" data-d="down" aria-label="Down">&#9660;</button>
     </div>
     <div class="rightpad">
-      <button class="abtn" id="abtn" aria-label="Interact">A</button>
+      <div class="ab">
+        <button class="bbtn" id="bbtn" aria-label="Hold to run">B</button>
+        <button class="abtn" id="abtn" aria-label="Talk, or act on what you face">A</button>
+      </div>
       <button class="focusbtn" id="focusbtn">FOCUS</button>
     </div>
   </div>
@@ -276,6 +289,10 @@ const gameMin = realMs => realMs*SPEED/60000;
 /* 267 ms is 16 frames for 16 px: one pixel per frame. 133/67/33 are the only
    other whole-pixel speeds, so the trial takes 67 rather than 267/SPEED. */
 const MOVE_MS = SPEED>1 ? 67 : 267, HOP_MS = MOVE_MS;
+/* Holding B halves how long a step takes to animate. It does NOT make a step
+   cheaper: distance is still charged per tile against the same budget, so
+   running buys you time on the sofa, never ground you have not paid for. */
+const RUN_MS = Math.round(MOVE_MS/2);
 
 /* ================= world ================= */
 const T=16, VW=240, VH=160, SS=4;
@@ -545,6 +562,8 @@ function say(msg,ms){
   clearTimeout(sayTimer);
   sayTimer=setTimeout(()=>el.classList.remove("on"), ms||3000);
 }
+const sayOn = () => $("#say").classList.contains("on");
+function hush(){ clearTimeout(sayTimer); $("#say").classList.remove("on"); }
 let bannerTimer;
 function banner(text){
   const el=$("#banner"); el.textContent=text; el.classList.add("on");
@@ -613,7 +632,8 @@ ctx.imageSmoothingEnabled=false;
 const ACOLS=64;
 
 /* ================= movement ================= */
-let mv=null, held=null, stepPhase=0, lastTry=0, warpLock=null;
+let mv=null, held=null, stepPhase=0, lastTry=0, warpLock=null, running=false;
+const moveMs = () => running ? RUN_MS : MOVE_MS;
 const introOn = () => $("#intro").classList.contains("on");
 const busy = () => mv||S.session||introOn()||$("#sheet").classList.contains("on");
 const affordable = i => TDIST[i]>=0 && TDIST[i]<=budget();
@@ -639,14 +659,14 @@ function tryMove(dir){
     const li=ly*W+lx;
     if(!passable(li)) return;
     if(!affordable(li)) return tired();
-    return start(lx,ly,HOP_MS,true,elevOf(META[li]));
+    return start(lx,ly,running?RUN_MS:HOP_MS,true,elevOf(META[li]));
   }
   if(nm&M_WATER){
     /* you enter the water by choosing to, from the A button; once on it you
        move about freely and can come ashore anywhere */
     if(!surfing() || canUse("SURF")!=="yes") return;
     if(!affordable(ni)) return tired();
-    return start(nx,ny,MOVE_MS,false,S.elev);        /* surfing keeps your level */
+    return start(nx,ny,moveMs(),false,S.elev);        /* surfing keeps your level */
   }
   if(blockedByObject(ni)) return;                      /* the A button explains */
   if(!(nm&M_WALK)) return;
@@ -654,7 +674,7 @@ function tryMove(dir){
   if(!(surfing() && ne===SHORE) &&                     /* you can always land */
      ne && S.elev && ne!==S.elev) return;              /* wrong level */
   if(!affordable(ni)) return tired();
-  start(nx,ny,MOVE_MS,false,ne);
+  start(nx,ny,moveMs(),false,ne);
 }
 function tired(){
   say("You are too tired to walk this far.\nPut the phone down and focus to go further.",3600);
@@ -716,7 +736,7 @@ function frame(){
       if(mv.hop) lift=Math.round(Math.sin(p*Math.PI)*12);
     }
   }
-  if(!mv && held && now-lastTry>110){ lastTry=now; tryMove(held); }
+  if(!mv && held && now-lastTry>Math.min(110,moveMs()-20)){ lastTry=now; tryMove(held); }
 
   let camX=Math.floor(Math.max(0,Math.min(W*T-VW, px+T/2-VW/2)));
   let camY=Math.floor(Math.max(0,Math.min(H*T-VH, py+T/2-VH/2)));
@@ -817,11 +837,18 @@ function takeGift(key){
 /* ================= input ================= */
 const KEYS={ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right",
             w:"up",s:"down",a:"left",d:"right"};
+const RUNKEY = e => e.key==="Shift" || e.key==="b" || e.key==="B";
 addEventListener("keydown",e=>{
-  if(e.key===" "||e.key==="Enter"){ e.preventDefault(); interact(); return; }
+  if(e.key===" "||e.key==="Enter"){ e.preventDefault(); press(); return; }
+  if(RUNKEY(e)){ setRun(true); return; }
   const k=KEYS[e.key]; if(k){ e.preventDefault(); held=k; tryMove(k); }
 });
-addEventListener("keyup",e=>{ if(KEYS[e.key]===held) held=null; });
+addEventListener("keyup",e=>{
+  if(RUNKEY(e)) setRun(false);
+  if(KEYS[e.key]===held) held=null;
+});
+/* let go of everything when the page goes away, or you come back running */
+addEventListener("blur",()=>{ setRun(false); held=null; });
 document.querySelectorAll(".dpad button").forEach(b=>{
   const dir=b.dataset.d;
   const on=e=>{ e.preventDefault(); held=dir; tryMove(dir); };
@@ -831,7 +858,27 @@ document.querySelectorAll(".dpad button").forEach(b=>{
   b.addEventListener("pointercancel",off);
   b.addEventListener("pointerleave",off);
 });
-$("#abtn").onclick=interact;
+/* A is the whole conversation and not only the verb. It turns Oak's pages,
+   sends a message away when you have read it, and acts on what you are facing
+   only when nothing is talking to you. Before this the box ignored every
+   button and sat there for its three seconds whatever you did. */
+function press(){
+  if(introOn()) return advanceIntro();
+  if(sayOn())   return hush();
+  interact();
+}
+$("#abtn").onclick=press;
+$("#say").onclick=hush;
+
+/* B is held, not pressed: it does not change what a step costs, only how long
+   you watch it happen. A tap of it still clears a message, the way it does on
+   the handheld. */
+function setRun(on){ running=on; $("#bbtn").classList.toggle("on",on); }
+(()=>{ const b=$("#bbtn");
+  b.addEventListener("pointerdown",e=>{ e.preventDefault(); setRun(true); if(sayOn()) hush(); });
+  for(const t of ["pointerup","pointercancel","pointerleave"])
+    b.addEventListener(t,e=>{ e.preventDefault(); setRun(false); });
+})();
 
 /* ================= bar ================= */
 function refreshBar(){
@@ -1273,11 +1320,12 @@ function paintIntro(){
   $("#i-text").textContent=OAK[oakLine];
   $("#i-next").textContent = oakLine<OAK.length-1 ? "▼" : "CHOOSE";
 }
-$("#intro").onclick=()=>{
+function advanceIntro(){
   if(oakLine<OAK.length-1){ oakLine++; paintIntro(); return; }
   $("#intro").classList.remove("on");
   chooseStarter();
-};
+}
+$("#intro").onclick=advanceIntro;
 const STARTER_BLURB={1:"The GRASS POKeMON. Very easy to raise.",
   4:"The FIRE POKeMON. It has a fiery temper.",
   7:"The WATER POKeMON. One worth raising."};
