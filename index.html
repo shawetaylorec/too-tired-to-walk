@@ -278,6 +278,8 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":30,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
+const BUILD     = "6 SEP 88f4b52";  /* so you can tell whether an update took */
+const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
 </script>
@@ -1189,7 +1191,8 @@ function paintSession(){
   /* what this session is worth depends on how far you have already come, so
      it is the difference between two points on the curve rather than a rate */
   $("#s-earn").innerHTML="+"+(stepsAt(S.minutes+Math.floor(mins))-stepsAt(S.minutes))+" STEPS"+
-    (led? " &middot; +"+Math.floor(mins)*XP_PER_MIN+" EXP TO "+
+    (led? " &middot; +"+Math.round(Math.floor(mins)*XP_PER_MIN*xpMult()*
+            ((SLOW && SLOW[led.sp])||1))+" EXP TO "+
           dexName(led.sp).toUpperCase() : "");
 }
 $("#s-stop").onclick=()=>endSession("stopped");
@@ -1235,7 +1238,10 @@ function endSession(reason,endedAt){
   }
   const fresh=kept.filter(sp=>S.caught[sp]===1);
   const led=lead();
-  const gainedXp=led? mins*XP_PER_MIN*xpMult() : 0;
+  /* MAGIKARP is the exception: it earns a fraction of what anything else does,
+     so the fish is a longer job than a starter and GYARADOS is properly earned */
+  const slowness = led ? ((SLOW && SLOW[led.sp]) || 1) : 1;
+  const gainedXp=led? Math.round(mins*XP_PER_MIN*xpMult()*slowness) : 0;
   let grew=[];
   if(led && gainedXp){ led.xp+=gainedXp; grew=evolveCheck(led);
     grew.forEach(sp=>{ S.caught[sp]=(S.caught[sp]||0)+1; S.seen[sp]=1; }); }
@@ -1556,8 +1562,36 @@ $("#dexbtn").onclick=()=>{
     '<button class="mini" id="exp">COPY SAVE CODE</button>'+
     '<textarea id="box" spellcheck="false" placeholder="Paste a save code, then LOAD"></textarea>'+
     '<button class="mini" id="imp" style="margin-top:8px">LOAD SAVE CODE</button>'+
+    '<h2 class="s-h" style="margin-top:22px">THIS COPY</h2>'+
+    '<p class="s-p">Build <b>'+BUILD+'</b>. Installed apps hold on to the old '+
+      'one for a while; this fetches the newest and reloads. Your save is kept.</p>'+
+    '<button class="mini" id="upd">CHECK FOR AN UPDATE</button>'+
+    '<p class="s-p" style="margin-top:22px">Starting again wipes this save '+
+      'completely — every POKeMON, every step, the whole POKeDEX. Copy the save '+
+      'code above first if you might want it back.</p>'+
+    '<button class="mini" id="wipe">START A NEW GAME</button>'+
     '<button class="close" id="closebtn">Back to Kanto</button>');
   closer();
+  /* A cache-busting query, because there is no service worker to talk to and
+     an installed page can sit on a cached copy for a good while. start_url in
+     the manifest is ".", so the next launch from the icon is clean again. */
+  $("#upd").onclick=function(){
+    this.textContent="FETCHING...";
+    location.replace(location.pathname+"?v="+Date.now());
+  };
+  /* Two presses, because there is no undo and no cloud copy of any of it. */
+  $("#wipe").onclick=function(){
+    if(this.dataset.sure!=="1"){
+      this.dataset.sure="1"; this.textContent="TAP AGAIN TO WIPE EVERYTHING";
+      this.style.background="var(--red)"; this.style.color="#fff";
+      setTimeout(()=>{ if(!$("#wipe")) return;
+        $("#wipe").dataset.sure=""; $("#wipe").textContent="START A NEW GAME";
+        $("#wipe").style.background=""; $("#wipe").style.color=""; }, 4000);
+      return;
+    }
+    try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+    location.replace(location.pathname);
+  };
   $("#exp").onclick=function(){
     const b=$("#box"); b.value=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
     b.select(); try{ document.execCommand("copy"); }catch(e){}
