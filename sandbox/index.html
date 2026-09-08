@@ -41,6 +41,10 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .where em{font-style:normal;color:var(--leaf)}
 .trialtag{font-family:var(--px);font-size:10px;padding:3px 6px;border-radius:4px;
           background:var(--gold);color:#221a05;letter-spacing:.06em}
+/* Shown only when the browser will not keep a save. Silence there is the worst
+   outcome: a whole evening of focus, then a new game in the morning. */
+.nosave{background:var(--red);color:#fff;font-size:12px;line-height:1.5;
+        padding:9px 12px;border-bottom:2px solid var(--edge)}
 .gauge{display:flex;align-items:baseline;gap:5px;font-family:var(--px)}
 .gauge b{font-size:16px;color:var(--gold);font-variant-numeric:tabular-nums}
 .gauge span{font-size:10px;color:var(--dim);letter-spacing:.08em}
@@ -213,6 +217,8 @@ textarea{width:100%;height:76px;margin-top:9px;padding:9px;border-radius:8px;
     <button class="tab" id="dexbtn">DEX</button>
   </header>
 
+  <div class="nosave" id="nosave" hidden></div>
+
   <div class="stage">
     <canvas id="cv"></canvas>
     <div class="banner" id="banner"></div>
@@ -278,7 +284,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":30,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "6 SEP 88f4b52";  /* so you can tell whether an update took */
+const BUILD     = "8 SEP 9b52faa";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -375,9 +381,8 @@ const HM_USERS={"CUT":["1","2","3","4","5","6","15","19","20","27","28","29","30
 /* ================= state ================= */
 const blank=()=>({minutes:0,sessions:0,caught:{},seen:{},region:REGION.sig,
   started:false,party:[],box:[],items:{},cleared:{},towns:{},legend:{},
-  dexUp:0,oakCall:0,traded:{},
+  dexUp:0,oakCall:0,traded:{},saved:0,
   x:REGION.spawn[0],y:REGION.spawn[1],dir:"down",elev:3,session:null});
-let S=load();
 function goHome(v){
   v.x=REGION.spawn[0]; v.y=REGION.spawn[1]; v.dir="down";
   v.elev=elevOf(META[v.y*W+v.x]);
@@ -388,10 +393,15 @@ function goHome(v){
    site and the sandbox would eat a real game. The real build keeps the bare
    key so saves made as an Artifact still load. */
 const SAVE_KEY="tooTired-sandbox";
+/* What the page found when it opened: "save", "empty", or the name of whatever
+   went wrong. A game that quietly starts over is the complaint this answers, so
+   the answer is recorded once, at the only moment it can be observed. */
+let loadFound="empty";
 function load(){
   let v=blank();
   try{ const r=localStorage.getItem(SAVE_KEY);
-       if(r) v=Object.assign(blank(),JSON.parse(r)); }catch(e){}
+       if(r){ v=Object.assign(blank(),JSON.parse(r)); loadFound="save"; } }
+  catch(e){ loadFound=(e&&e.name)||"unreadable"; }
   for(const k of ["party","box"]) if(!Array.isArray(v[k])) v[k]=[];
   for(const k of ["caught","seen","items","cleared","towns","legend"])
     if(!v[k]||typeof v[k]!=="object") v[k]={};
@@ -406,7 +416,85 @@ function load(){
   v.region=REGION.sig;
   return v;
 }
-function persist(){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(S)); }catch(e){} }
+/* The save carries the moment it was written, so the save screen can say when
+   this copy was last kept rather than only that one exists. A write that throws
+   is remembered too: swallowing it in silence is how a browser that cannot
+   store anything comes to look exactly like one that can. */
+let writeErr=null;
+function persist(){
+  S.saved=Date.now();
+  try{ localStorage.setItem(SAVE_KEY,JSON.stringify(S)); writeErr=null; }
+  catch(e){ writeErr=(e&&e.name)||"failed"; }
+}
+/* Android throws a site's data out when the phone runs short of room, and an
+   installed page is not spared unless it asks to be. This is the ask. Chrome
+   grants it to a page you have added to your home screen without a prompt, and
+   once granted the save survives everything short of a deliberate wipe. The
+   answer is kept because "will this still be here tomorrow" deserves a real
+   answer on the screen rather than a hope. */
+let kept=null;   /* true, false, or null when the browser will not say */
+async function askKept(){
+  try{
+    if(!navigator.storage||!navigator.storage.persist) return;
+    kept = await navigator.storage.persisted();
+    if(!kept) kept = await navigator.storage.persist();
+  }catch(e){}
+}
+/* Does this browser keep anything at all? A private tab, or the small browser
+   inside a chat app, takes a write and loses it — which from inside the game
+   is indistinguishable from a new game every time. Ask it directly. */
+function canStore(){
+  try{ localStorage.setItem(SAVE_KEY+"-probe","1");
+       const ok=localStorage.getItem(SAVE_KEY+"-probe")==="1";
+       localStorage.removeItem(SAVE_KEY+"-probe"); return ok;
+  }catch(e){ return false; }
+}
+/* One save, as text you can put somewhere that is not this browser. */
+function saveCode(){ return btoa(unescape(encodeURIComponent(JSON.stringify(S)))); }
+function applyCode(txt){
+  try{
+    const v=JSON.parse(decodeURIComponent(escape(atob(String(txt).trim()))));
+    if(typeof v.minutes!=="number") return false;
+    S=Object.assign(blank(),v); S.session=null; persist();
+    rebuild(); refreshBar(); shut(); return true;
+  }catch(e){ return false; }
+}
+function ago(t){
+  const m=Math.floor((Date.now()-t)/60000);
+  if(m<1) return "a moment ago";
+  if(m<60) return m+" minute"+(m===1?"":"s")+" ago";
+  const h=Math.floor(m/60);
+  if(h<24) return h+" hour"+(h===1?"":"s")+" ago";
+  const d=Math.floor(h/24);
+  return d+" day"+(d===1?"":"s")+" ago";
+}
+function saveStatus(){
+  if(!canStore())
+    return "<b>This browser is not keeping your game.</b> It accepts the save "+
+      "and loses it, which is what a private tab and the small browser inside "+
+      "another app both do. Open the page in Chrome itself and add it to your "+
+      "home screen. Until then, save to a file after every session.";
+  if(writeErr) return "<b>The last save failed ("+writeErr+").</b> Save to a file now.";
+  if(loadFound!=="save" && loadFound!=="empty")
+    return "<b>The save here could not be read ("+loadFound+").</b> This game "+
+      "began from scratch. If you have a file or a code, load it below.";
+  const when = S.saved ? "Last kept "+ago(S.saved)+"." : "Nothing kept yet.";
+  if(kept===true) return when+" Chrome has promised to hold on to it: it will "+
+    "not be thrown away to make room, only by clearing this site's data.";
+  if(kept===false) return when+" Chrome has <b>not</b> promised to hold on to "+
+    "it, so a phone short of space may clear it. Adding the page to your home "+
+    "screen usually earns the promise. Keep a file copy either way.";
+  return when+" It lives in this browser only, so keep a file copy.";
+}
+
+/* Last, and that matters. This used to sit above the block, back when the key
+   was the literal "tooTired" and load() needed nothing that was not already
+   there. The moment the key became `const SAVE_KEY` declared further down,
+   load() ran against a name in the temporal dead zone: getItem threw, the bare
+   `catch(e){}` ate it, and every launch quietly started a new game — then wrote
+   that blank over the real save. It reads at a glance like an ordering nicety.
+   It is the whole save system, so it goes after everything it touches. */
+let S=load();
 /* The sandbox build is for testing: nothing is ever out of range and every HM
    works, but the givers still play their scene so the interactions can be seen. */
 const budget = () => SANDBOX ? 1e9 : stepsAt(S.minutes);
@@ -1558,7 +1646,12 @@ $("#dexbtn").onclick=()=>{
         (have||seen?dexName(sp):"?????")+'</b></div>';
     }).join("")+'</div>'+
     '<div class="divide"></div><h2 class="s-h">Save data</h2>'+
-    '<p class="s-p">Progress lives in this browser. Copy the code somewhere safe.</p>'+
+    '<p class="s-p">'+saveStatus()+'</p>'+
+    '<button class="mini" id="dl">SAVE TO A FILE</button>'+
+    '<button class="mini" id="ld" style="margin-top:8px">LOAD FROM A FILE</button>'+
+    '<input type="file" id="ldf" accept=".txt,.json,text/plain" hidden>'+
+    '<p class="s-p" style="margin-top:16px">Or move it by hand — the same save, '+
+      'as text you can paste into a note or a message to yourself.</p>'+
     '<button class="mini" id="exp">COPY SAVE CODE</button>'+
     '<textarea id="box" spellcheck="false" placeholder="Paste a save code, then LOAD"></textarea>'+
     '<button class="mini" id="imp" style="margin-top:8px">LOAD SAVE CODE</button>'+
@@ -1592,19 +1685,37 @@ $("#dexbtn").onclick=()=>{
     try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
     location.replace(location.pathname);
   };
+  /* A file is the only copy that survives the browser deciding to forget, so
+     it is the first button rather than the last. Android puts it in Downloads,
+     where a backup app or a cloud drive will pick it up without being asked. */
+  $("#dl").onclick=function(){
+    const stamp=new Date().toISOString().slice(0,10);
+    const url=URL.createObjectURL(new Blob([saveCode()],{type:"text/plain"}));
+    const a=document.createElement("a");
+    a.href=url; a.download="too-tired-"+stamp+".txt";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+    this.textContent="SAVED TO DOWNLOADS";
+    setTimeout(()=>{ if($("#dl")) $("#dl").textContent="SAVE TO A FILE"; },2200);
+  };
+  $("#ld").onclick=()=>$("#ldf").click();
+  $("#ldf").onchange=function(){
+    const f=this.files&&this.files[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{ if(!applyCode(r.result)){
+      $("#ld").textContent="THAT FILE DID NOT READ";
+      setTimeout(()=>{ if($("#ld")) $("#ld").textContent="LOAD FROM A FILE"; },2200); } };
+    r.readAsText(f);
+  };
   $("#exp").onclick=function(){
-    const b=$("#box"); b.value=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+    const b=$("#box"); b.value=saveCode();
     b.select(); try{ document.execCommand("copy"); }catch(e){}
     this.textContent="COPIED"; setTimeout(()=>{this.textContent="COPY SAVE CODE";},2200);
   };
   $("#imp").onclick=function(){
-    try{
-      const v=JSON.parse(decodeURIComponent(escape(atob($("#box").value.trim()))));
-      if(typeof v.minutes!=="number") throw 0;
-      S=Object.assign(blank(),v); S.session=null; persist();
-      rebuild(); refreshBar(); shut();
-    }catch(e){ this.textContent="THAT CODE DID NOT READ";
-               setTimeout(()=>{this.textContent="LOAD SAVE CODE";},2200); }
+    if(applyCode($("#box").value)) return;
+    this.textContent="THAT CODE DID NOT READ";
+    setTimeout(()=>{this.textContent="LOAD SAVE CODE";},2200);
   };
 };
 
@@ -1653,6 +1764,14 @@ function chooseStarter(){
 function boot(){
   if(SANDBOX||SPEED>1){ const t=$("#trialtag"); t.hidden=false;
     t.textContent = SANDBOX ? "SANDBOX" : "x"+SPEED; }
+  /* Ask to be kept before anything else, and say so plainly if this browser
+     will not keep anything — the alternative is finding out in a week. */
+  askKept();
+  if(!canStore()){
+    const n=$("#nosave"); n.hidden=false;
+    n.innerHTML="This browser will not keep your game — every visit starts "+
+      "again. Open the page in Chrome itself, then Add to Home screen.";
+  }
   refreshBar();
   if(S.session){
     const alive=S.session.seen||S.session.start;
