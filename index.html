@@ -125,6 +125,12 @@ canvas#cv{display:block;width:100%;height:auto;touch-action:none}
 .pip{width:14px;height:14px;border-radius:50%;border:2px solid #253026;background:transparent}
 .pip.lit{background:#5f9a57;border-color:#9ac48f;box-shadow:0 0 12px rgba(95,154,87,.6)}
 .s-note{font-family:var(--px);font-size:11px;letter-spacing:.06em;color:#4e5a4d}
+/* The one thing the page cannot do for you, asked for once per session. Set
+   as a tip rather than a warning: it is a suggestion, and it is the same
+   suggestion every time, so it must not shout. */
+.s-dim{margin-top:16px;padding:8px 15px;border-radius:20px;
+       border:1px solid #22301f;background:#0e150d;
+       font-size:12px;color:#7f8f7c;max-width:31ch;line-height:1.5}
 .s-roll{margin-top:24px;min-height:20px;font-size:13px;color:#8fbb84}
 .s-earn{margin-top:6px;font-family:var(--px);font-size:13px;color:var(--gold)}
 .s-stop{margin-top:30px;padding:13px 30px;border-radius:9px;border:2px solid #253026;
@@ -271,6 +277,8 @@ textarea{width:100%;height:76px;margin-top:9px;padding:9px;border-radius:8px;
   <div class="s-time" id="s-time">00:00</div>
   <div class="s-sub" id="s-sub">Phone face down. Leaving this page ends the session &mdash;
     you keep everything earned so far.</div>
+  <div class="s-dim" id="s-dim">Brightness right down. The screen goes black in a
+    moment &mdash; one tap brings it back.</div>
   <div class="pips" id="s-pips"><div class="pip"></div><div class="pip"></div><div class="pip"></div></div>
   <div class="s-note" id="s-next"></div>
   <div class="s-roll" id="s-roll"></div>
@@ -302,7 +310,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":30,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "10 SEP 69dfcca";  /* so you can tell whether an update took */
+const BUILD     = "10 SEP 4f57d4b";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
