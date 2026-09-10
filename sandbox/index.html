@@ -130,6 +130,22 @@ canvas#cv{display:block;width:100%;height:auto;touch-action:none}
 .s-stop{margin-top:30px;padding:13px 30px;border-radius:9px;border:2px solid #253026;
         color:#6d7a6c;font-family:var(--px);font-size:12px;letter-spacing:.08em}
 
+/* ---- the dark ---- */
+/* No page can turn a backlight down. What it can do is stop asking the panel
+   for light: a true #000 pixel on the OLED in a phone is an unlit one, so the
+   whole thing goes black and the frame loop stops drawing a picture nobody is
+   looking at. It sits above the sheets as well as the session, because it has
+   to swallow the tap that wakes it. */
+/* slow to fall asleep, quick to wake: the long fade is on .on, so taking it
+   off brings the screen back almost at once */
+.dark{position:fixed;inset:0;background:#000;z-index:40;opacity:0;
+      pointer-events:none;transition:opacity .18s linear}
+.dark.on{opacity:1;pointer-events:auto;transition:opacity 1.4s linear}
+.dark .wake{position:absolute;left:0;right:0;bottom:16%;text-align:center;
+      font-family:var(--px);font-size:10px;letter-spacing:.16em;color:#1d221c;
+      transition:opacity 2.4s linear}
+.dark.deep .wake{opacity:0}
+
 /* ---- sheets ---- */
 .sheet{position:fixed;inset:0;background:var(--panel);color:var(--ink);z-index:30;
        display:none;flex-direction:column;overflow-y:auto}
@@ -262,6 +278,8 @@ textarea{width:100%;height:76px;margin-top:9px;padding:9px;border-radius:8px;
   <button class="s-stop" id="s-stop">END SESSION</button>
 </div>
 
+<div class="dark" id="dark"><div class="wake">TAP TO WAKE</div></div>
+
 <div class="sheet" id="sheet"><div class="inner" id="sheetinner"></div></div>
 
 <script>
@@ -284,7 +302,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":30,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "8 SEP 9b52faa";  /* so you can tell whether an update took */
+const BUILD     = "10 SEP 06e3bb1";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -875,8 +893,58 @@ function arrive(from){
   persist(); refreshBar();
 }
 
+/* ================= the dark ================= */
+/* A study session is an hour of a lit phone doing nothing, so after a few
+   seconds it goes black and stays black until it is touched. Three things go
+   quiet at once: the pixels, the 1s clock repaint, and the frame loop, which
+   drops from every refresh to twice a second because there is nothing to see.
+   The wake lock is deliberately KEPT — letting the phone lock itself would
+   hide the page, and a hidden page ends the session. Declared here, above
+   frame(), so the loop can never read it out of its dead zone. */
+const DARK_MS=8000;
+let dark=false, darkT=null;
+const themeMeta = () => document.querySelector('meta[name="theme-color"]');
+function armDark(){
+  clearTimeout(darkT); darkT=null;
+  if(!S.session || dark) return;
+  darkT=setTimeout(goDark, DARK_MS);
+}
+function goDark(){
+  darkT=null;
+  if(dark || !S.session) return;
+  dark=true;
+  $("#dark").classList.add("on");
+  /* the hint outlives the fade, then leaves so the screen is honestly black */
+  setTimeout(()=>{ if(dark) $("#dark").classList.add("deep"); }, 2600);
+  const mt=themeMeta(); if(mt){ mt.dataset.was=mt.content; mt.content="#000000"; }
+  clearInterval(tick); tick=setInterval(paintSession, 10000);
+}
+/* rearm=false is for the end of a session: come back up and stay up. */
+function darkOff(rearm){
+  clearTimeout(darkT); darkT=null;
+  if(dark){
+    dark=false;
+    $("#dark").classList.remove("on","deep");
+    const mt=themeMeta(); if(mt && mt.dataset.was) mt.content=mt.dataset.was;
+    clearInterval(tick);
+    if(S.session) tick=setInterval(paintSession,1000);
+    paintSession();
+  }
+  if(rearm) armDark();
+}
+$("#dark").addEventListener("pointerdown",e=>{
+  e.preventDefault(); e.stopPropagation(); darkOff(true);
+});
+/* any touch anywhere puts the few seconds back on the clock */
+addEventListener("pointerdown",()=>{ if(S.session && !dark) armDark(); }, true);
+addEventListener("keydown",e=>{
+  if(!dark) return;
+  e.preventDefault(); e.stopPropagation(); darkOff(true);
+}, true);
+
 /* ================= drawing ================= */
 function frame(){
+  if(dark){ setTimeout(frame,500); return; }   /* nothing to draw on a black screen */
   const now=performance.now();
   let px=S.x*T, py=S.y*T, lift=0;
   if(mv){
@@ -1040,7 +1108,7 @@ function seeOak(){
       xpMult()+'</b> experience</div>'+
     '<p class="s-p" style="margin-top:10px">Your legs are your own affair, mind. '+
       'That still comes one minute at a time.</p>'+
-    (boxed? '<p class="s-p">Your squad was full, so it went to storage.</p>':"")+
+    (boxed? '<p class="s-p">Your squad was full, so it went to BILL&#39;s PC.</p>':"")+
     '<button class="close" id="closebtn">Thank him</button>');
   closer();
 }
@@ -1116,7 +1184,7 @@ function seeTrader(key){
       '</small></div><div class="tag">NEW</div></div></div>'+
       '<p class="s-p" style="margin-top:16px">"Thank you! It will be happy here. '+
       'Take good care of mine."</p>'+
-      (boxed? '<p class="s-p">Your squad was full, so it went to storage.</p>':"")+
+      (boxed? '<p class="s-p">Your squad was full, so it went to BILL&#39;s PC.</p>':"")+
       '<button class="close" id="closebtn">Shake on it</button>');
     closer();
   };
@@ -1218,6 +1286,7 @@ function startSession(mode,extra){
     : "Phone face down. Leaving this page ends the session — you keep everything earned so far.";
   paintSession();
   clearInterval(tick); tick=setInterval(paintSession,1000);
+  armDark();
 }
 function sessionTable(ss){
   if(ss.mode==="fish") return encTable(ss.rod);
@@ -1286,11 +1355,11 @@ function paintSession(){
 $("#s-stop").onclick=()=>endSession("stopped");
 function endSession(reason,endedAt){
   const ss=S.session; if(!ss) return;
-  clearInterval(tick); dropWake();
+  darkOff(false); clearInterval(tick); dropWake();
   $("#session").classList.remove("on");
   const mins=Math.floor(gameMin((endedAt||Date.now())-ss.start));
   const slots=SLOT_AT.filter(m=>mins>=m).length;
-  let kept=[], lvlOf={}, boxed=[], legend=null;
+  let kept=[], lvlOf={}, boxed=[], legend=null, dupes=0;
 
   if(ss.mode==="revive"){
     for(const dex of ss.got||[]){
@@ -1320,7 +1389,15 @@ function endSession(reason,endedAt){
         if(ca!==cb) return ca-cb;
         return pct(a)-pct(b);
       });
-      kept=order.slice(0,slots);
+      /* One of each. Anything already in the squad or in BILL's PC is let go
+         rather than handed over a second time, and the slot falls through to
+         the next thing along. The test is what you HOLD, not what the POKeDEX
+         has recorded: a species you traded away or evolved out of can be found
+         again, and it has to be, or a swap could take the last one of
+         something a later trader asks for. */
+      const want=order.filter(sp=>!findMon(sp));
+      dupes=order.length-want.length;
+      kept=want.slice(0,slots);
     }
     kept.forEach(sp=>{ if(give(sp,lvlOf[sp])) boxed.push(sp); });
   }
@@ -1353,7 +1430,7 @@ function endSession(reason,endedAt){
   if(summoned) S.oakCall=1;
   persist();
   rebuild(); refreshBar();
-  results({mins,kept,fresh,boxed,reason,place:ss.place,mode:ss.mode,summoned,
+  results({mins,kept,fresh,boxed,reason,place:ss.place,mode:ss.mode,summoned,dupes,
            steps:gainedSteps,
            left:ss.mode==="revive" ? heldFossils().length : 0,
            xp:gainedXp,grew,lead:led,legend,balls:ss.balls||0,
@@ -1363,7 +1440,7 @@ document.addEventListener("visibilitychange",()=>{
   if(!S.session) return;
   if(document.hidden) hiddenAt=Date.now();
   else if(Date.now()-hiddenAt>GRACE_MS) endSession("broken");
-  else grabWake();
+  else { grabWake(); darkOff(true); }
 });
 
 /* ================= water ================= */
@@ -1452,6 +1529,10 @@ function results(r){
           (r.fresh.indexOf(sp)!==-1?'<div class="tag">NEW</div>':'')+'</div>').join("")+'</div>'
       : '<p class="s-p">'+(r.mins<SLOT_AT[0]
           ? "Not long enough for a catch — the first slot needs "+SLOT_AT[0]+" minutes."
+          : r.dupes
+          ? "No new POKeMON. "+(r.dupes===1 ? "The one that turned up was"
+                                            : "Everything that turned up was")+
+            " already yours, so you let it go."
           : "Nothing was biting.")+'</p>';
   }
   const grewHtml = r.grew.length
@@ -1469,7 +1550,7 @@ function results(r){
       (r.reason==="broken"?" — you picked the phone up, but everything up to that point counts.":"")+
     '</p>'+ body + grewHtml + xpHtml +
     (r.boxed.length? '<p class="s-p" style="margin-top:10px">Your squad was full, so '+
-      r.boxed.map(sp=>dexName(sp)).join(" and ")+' went to storage.</p>':"")+
+      r.boxed.map(sp=>dexName(sp)).join(" and ")+' went to BILL&#39;s PC.</p>':"")+
     (r.summoned? '<p class="s-p" style="margin-top:14px;color:var(--leaf)">'+
       '<b>'+dexKnown()+' species recorded.</b> PROF. OAK has been asking after '+
       'you — there is something for you back at the lab in PALLET TOWN.</p>':"")+
@@ -1505,13 +1586,13 @@ function openTeam(){
   openSheet(
     '<h2 class="s-h">Squad</h2>'+
     '<p class="s-p">Only the Pokemon in slot 1 earns experience while you focus. '+
-      'Tap one to pick it up, then tap another to swap them — storage included.</p>'+
+      'Tap one to pick it up, then tap another to swap them — BILL&#39;s PC included.</p>'+
     '<div class="mons">'+slots.join("")+'</div>'+
     '<div class="divide"></div><h2 class="s-h">Bag</h2>'+
     '<div class="bag">'+bag.map(k=>'<span class="'+(has(k)?"":"no")+'">'+
       (HM_NAME[k]||k.replace("ROD"," ROD"))+'</span>').join("")+'</div>'+
     (S.box.length
-      ? '<div class="divide"></div><h2 class="s-h">Storage</h2>'+
+      ? '<div class="divide"></div><h2 class="s-h">BILL&#39;s PC</h2>'+
         '<p class="s-p">'+S.box.length+' waiting. They earn nothing here.</p>'+
         '<div class="mons">'+S.box.map((m,i)=>monCard(m,"box",i)).join("")+'</div>'
       : '')+
@@ -1783,6 +1864,7 @@ function boot(){
       $("#s-place").textContent=(S.session.place||"Kanto").toUpperCase();
       grabWake(); paintSession();
       clearInterval(tick); tick=setInterval(paintSession,1000);
+      armDark();
     }
     return;
   }
