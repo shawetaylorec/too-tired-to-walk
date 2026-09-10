@@ -302,7 +302,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":30,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "10 SEP 06e3bb1";  /* so you can tell whether an update took */
+const BUILD     = "10 SEP 69dfcca";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -399,7 +399,7 @@ const HM_USERS={"CUT":["1","2","3","4","5","6","15","19","20","27","28","29","30
 /* ================= state ================= */
 const blank=()=>({minutes:0,sessions:0,caught:{},seen:{},region:REGION.sig,
   started:false,party:[],box:[],items:{},cleared:{},towns:{},legend:{},
-  dexUp:0,oakCall:0,traded:{},saved:0,
+  dexUp:0,oakCall:0,traded:{},saved:0,tidy:0,
   x:REGION.spawn[0],y:REGION.spawn[1],dir:"down",elev:3,session:null});
 function goHome(v){
   v.x=REGION.spawn[0]; v.y=REGION.spawn[1]; v.dir="down";
@@ -778,6 +778,47 @@ function give(sp,lvl){
   return full;
 }
 const dexName = sp => (SPECIES[sp]||{name:"?"}).name;
+/* A catch slot stopped handing out seconds, but a save made before that rule
+   still holds the ones it collected, and they are the whole reason the rule
+   exists. So once, on a flag in the save, the squad and the PC are collapsed
+   to one of each. The one kept is the one with the most experience, and if
+   that one was sitting in the PC it takes the squad slot its weaker twin held
+   — the squad keeps its shape, and slot 1 keeps whatever was earning. */
+function tidyDupes(){
+  const best={};
+  for(const m of S.party.concat(S.box)){
+    const sp=String(m.sp);
+    if(!best[sp] || (m.xp||0)>(best[sp].xp||0)) best[sp]=m;
+  }
+  const claimed={}, party=[], box=[], gone=[];
+  const pass=(from,to)=>{
+    for(const m of from){
+      const sp=String(m.sp);
+      if(claimed[sp]){ gone.push(sp); continue; }
+      claimed[sp]=1; to.push(best[sp]);
+    }
+  };
+  pass(S.party,party); pass(S.box,box);
+  S.party=party; S.box=box;
+  return gone;                       /* the species let go, one entry each */
+}
+function dupeNotice(gone){
+  const n={};
+  for(const sp of gone) n[sp]=(n[sp]||0)+1;
+  const list=Object.keys(n);
+  openSheet(
+    '<h2 class="s-h">ONE OF EACH</h2>'+
+    '<p class="s-p">There is only room for one of each now. '+
+      (gone.length===1?'This one was':'These were')+' let go where '+
+      (gone.length===1?'it':'they')+' came from — the strongest of each stayed '+
+      'with you, and the POKeDEX keeps every one you have ever caught.</p>'+
+    '<div class="catches">'+list.map(sp=>
+      '<div class="catch"><img src="'+MONS[sp]+'" alt=""><div><b>'+dexName(sp)+
+      '</b><small>'+(n[sp]===1?'the spare one':n[sp]+' spare ones')+
+      '</small></div></div>').join("")+'</div>'+
+    '<button class="close" id="closebtn">Back to Kanto</button>');
+  closer();
+}
 
 /* ================= sprites ================= */
 const atImg=new Image();  atImg.src=ATLAS_SRC;
@@ -904,6 +945,30 @@ function arrive(from){
 const DARK_MS=8000;
 let dark=false, darkT=null;
 const themeMeta = () => document.querySelector('meta[name="theme-color"]');
+/* Android draws its own status bar on top of the page — clock, wifi, battery —
+   and those pixels stay lit however black the page goes, which is enough to
+   make the whole screen read as on. Fullscreen is the only way a page is given
+   them, and asking needs a real tap, so it is asked for when the session
+   starts (every startSession is one) rather than when the dark falls, which is
+   a timer and would be refused. Everything here is best-effort: iOS gives a
+   page no fullscreen at all, and a refusal must stay quiet. */
+function goFull(){
+  try{
+    const el=document.documentElement;
+    if(!document.fullscreenElement && el.requestFullscreen){
+      const p=el.requestFullscreen({navigationUI:"hide"});
+      if(p && p.catch) p.catch(()=>{});
+    }
+  }catch(e){}
+}
+function dropFull(){
+  try{
+    if(document.fullscreenElement && document.exitFullscreen){
+      const p=document.exitFullscreen();
+      if(p && p.catch) p.catch(()=>{});
+    }
+  }catch(e){}
+}
 function armDark(){
   clearTimeout(darkT); darkT=null;
   if(!S.session || dark) return;
@@ -1273,7 +1338,7 @@ function startSession(mode,extra){
   S.session=Object.assign({start:Date.now(),place:m?(secName(m.sec)||m.n):"Kanto",
     mode:mode, map:hereIdx(), afloat:surfing(),
     rolls:[], next:1, balls:0, caught:0}, extra||{});
-  persist(); grabWake();
+  persist(); grabWake(); goFull();
   $("#session").classList.add("on");
   const tag = mode==="fish" ? " · fishing" : mode==="legend" ? " · the hunt"
             : mode==="revive" ? " · the lab"
@@ -1355,7 +1420,7 @@ function paintSession(){
 $("#s-stop").onclick=()=>endSession("stopped");
 function endSession(reason,endedAt){
   const ss=S.session; if(!ss) return;
-  darkOff(false); clearInterval(tick); dropWake();
+  darkOff(false); clearInterval(tick); dropWake(); dropFull();
   $("#session").classList.remove("on");
   const mins=Math.floor(gameMin((endedAt||Date.now())-ss.start));
   const slots=SLOT_AT.filter(m=>mins>=m).length;
@@ -1854,6 +1919,12 @@ function boot(){
       "again. Open the page in Chrome itself, then Add to Home screen.";
   }
   refreshBar();
+  /* once per save, and before anything else can look at the squad */
+  if(!S.tidy){
+    const gone=tidyDupes();
+    S.tidy=1; persist();
+    if(gone.length) dupeNotice(gone);
+  }
   if(S.session){
     const alive=S.session.seen||S.session.start;
     if(Date.now()-alive>GRACE_MS){
