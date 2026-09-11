@@ -310,7 +310,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":30,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "10 SEP 4f57d4b";  /* so you can tell whether an update took */
+const BUILD     = "11 SEP 4f6141a";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -346,6 +346,34 @@ const START_STEPS=40, STEP_K=16, XP_PER_MIN=20;
 const stepsAt = m => Math.floor(START_STEPS + STEP_K*Math.sqrt(Math.max(0,m)));
 const minutesFor = s => s<=START_STEPS
   ? 0 : Math.ceil(Math.pow((s-START_STEPS)/STEP_K, 2));
+/* The ceiling, and it is the other half of the economy.
+
+   The budget is a radius and it is never spent, which meant that standing
+   still earned ground exactly as fast as walking did. A fortnight of hunting
+   one rare Pokemon in VIRIDIAN FOREST bought a budget that reached far past
+   PEWTER, so the map arrived pre-revealed and the range stopped being
+   something you walked into — which is the whole feeling the game is for.
+
+   So the budget stops growing once it is CAP_SLACK steps past the nearest
+   town you have not yet walked into. Grind all month in the forest and you
+   still top out just beyond PEWTER; walk in, and the ceiling moves to
+   CERULEAN and the budget starts climbing again. The rate is untouched: what
+   changes is that the map can no longer get ahead of your feet.
+
+   Two properties make it safe to bolt onto a radius that never shrinks.
+
+   It gates growth, it never clamps a budget already held. A gate opening —
+   CUT, SURF — can bring a *closer* unvisited town into range, which lowers
+   the ceiling; clamping to it would un-reach ground already paid for and
+   strand the player exactly the way a changed region signature once did.
+
+   And it cannot deadlock. The ceiling always leaves enough to walk into the
+   very town it is measured against, since that town is CAP_SLACK nearer than
+   the ceiling. Doing so strictly shrinks the unvisited set, so the set
+   empties, and with nothing unvisited in range the ceiling lifts altogether —
+   which is what lets you go and fetch a CUT or a SURF that lives further out
+   than any town left. */
+const CAP_SLACK=50;
 const ROLL_MIN=15, SLOT_AT=[15,60,120], GRACE_MS=10000;
 const BALL_AT=[0,60,120];          /* extra legendary ball per 15 min, at these minutes */
 const BALL_ODDS=0.14;              /* one Ultra Ball at an almost-fainted legendary */
@@ -405,7 +433,11 @@ const HM_DOES={CUT:"cut down a small tree", SURF:"cross deep water",
 const HM_USERS={"CUT":["1","2","3","4","5","6","15","19","20","27","28","29","30","31","32","33","34","43","44","45","46","47","50","51","52","53","69","70","71","72","73","83","98","99","108","112","114","115","123","127","141","149","151"],"SURF":["7","8","9","31","34","54","55","60","61","62","72","73","79","80","86","87","90","91","98","99","108","112","115","116","117","118","119","120","121","128","130","131","134","138","139","140","141","143","147","148","149","151"],"STRENGTH":["1","2","3","4","5","6","7","8","9","20","23","24","25","26","27","28","29","30","31","32","33","34","35","36","39","40","54","55","56","57","58","59","61","62","66","67","68","74","75","76","77","78","79","80","89","94","95","98","99","102","103","104","105","106","107","108","111","112","113","115","125","126","127","128","130","131","142","143","149","150","151"],"FLASH":["1","2","3","12","25","26","35","36","39","40","43","44","45","46","47","48","49","52","53","54","55","63","64","65","69","70","71","79","80","81","82","96","97","100","101","102","103","109","110","113","114","120","121","122","124","125","135","137","145","150","151"],"SING":["35","36","39","40","113","131"]};
 
 /* ================= state ================= */
-const blank=()=>({minutes:0,sessions:0,caught:{},seen:{},region:REGION.sig,
+/* `minutes` is every minute ever focused and is what the stats quote.
+   `stepMin` is the part of it the step budget was allowed to keep — it stops
+   while the ceiling is in force, which is the only thing that stops a long
+   grind cashing out the moment you finally walk into the town. */
+const blank=()=>({minutes:0,stepMin:0,sessions:0,caught:{},seen:{},region:REGION.sig,
   started:false,party:[],box:[],items:{},cleared:{},towns:{},legend:{},
   dexUp:0,oakCall:0,traded:{},saved:0,tidy:0,
   x:REGION.spawn[0],y:REGION.spawn[1],dir:"down",elev:3,session:null});
@@ -426,7 +458,19 @@ let loadFound="empty";
 function load(){
   let v=blank();
   try{ const r=localStorage.getItem(SAVE_KEY);
-       if(r){ v=Object.assign(blank(),JSON.parse(r)); loadFound="save"; } }
+       if(r){ const raw=JSON.parse(r);
+              v=Object.assign(blank(),raw); loadFound="save";
+              /* A save written before the ceiling existed has minutes and no
+                 stepMin, and Object.assign hands it the blank's 0 — collapsing
+                 a budget of nine hundred steps to forty and stranding the
+                 player wherever they stood. Every minute of an old save
+                 counted, so every minute of it carries over.
+
+                 Ask the *raw* save, not the merge. blank() always supplies a
+                 stepMin, so the merged object always has one and a guard
+                 written against it never fires — which is exactly how this
+                 shipped broken the first time it was written. */
+              if(typeof raw.stepMin!=="number") v.stepMin=v.minutes||0; } }
   catch(e){ loadFound=(e&&e.name)||"unreadable"; }
   for(const k of ["party","box"]) if(!Array.isArray(v[k])) v[k]=[];
   for(const k of ["caught","seen","items","cleared","towns","legend"])
@@ -481,7 +525,9 @@ function applyCode(txt){
   try{
     const v=JSON.parse(decodeURIComponent(escape(atob(String(txt).trim()))));
     if(typeof v.minutes!=="number") return false;
-    S=Object.assign(blank(),v); S.session=null; persist();
+    S=Object.assign(blank(),v); S.session=null;
+    if(typeof v.stepMin!=="number") S.stepMin=S.minutes||0;
+    persist();
     rebuild(); refreshBar(); shut(); return true;
   }catch(e){ return false; }
 }
@@ -523,7 +569,7 @@ function saveStatus(){
 let S=load();
 /* The sandbox build is for testing: nothing is ever out of range and every HM
    works, but the givers still play their scene so the interactions can be seen. */
-const budget = () => SANDBOX ? 1e9 : stepsAt(S.minutes);
+const budget = () => SANDBOX ? 1e9 : stepsAt(S.stepMin);
 /* Oak's upgrades multiply experience and nothing else. In a real game the
    things you fight get stronger as you go, so a strong Pokemon levels no
    slower than a weak one did; nothing here gets stronger, so the curve just
@@ -695,6 +741,46 @@ function reshade(b){
   for(let i=0;i<W*H;i++) SHADE[i]= lit[i]?0:1;
 }
 function rebuild(){ reflood(); reshade(budget()); }
+
+/* ================= the ceiling =================
+   The nearest town you have not yet walked into, measured along the same
+   0-1 flood the budget is measured against, and the ceiling that follows from
+   it. Both read TDIST, so both are only meaningful after a reflood. */
+function nextTown(){
+  let best=null;
+  for(let i=0;i<MAPS.length;i++){
+    const m=MAPS[i];
+    if(m.kind!=="town" || S.towns[i]) continue;
+    for(let y=m.y;y<m.y+m.h;y++) for(let x=m.x;x<m.x+m.w;x++){
+      const d=TDIST[y*W+x];
+      if(d>=0 && (!best || d<best.d)) best={i:i, d:d, m:m};
+    }
+  }
+  return best;
+}
+/* Infinity, not a number, when there is no unvisited town in range: that is
+   the state where the ceiling has to be gone entirely so the HM that opens the
+   next stretch of Kanto can be walked to. */
+function stepCap(){
+  if(SANDBOX) return Infinity;
+  const t=nextTown();
+  return t ? t.d+CAP_SLACK : Infinity;
+}
+const atCeiling = () => !SANDBOX && budget()>=stepCap();
+/* Where the step clock would stand after `mins` more minutes of focus. It
+   never runs backwards: a ceiling that has dropped below the budget already
+   held stops the clock, it does not rewind it. */
+function stepMinAfter(mins){
+  const cap=stepCap();
+  const lim = cap===Infinity ? Infinity : Math.max(S.stepMin, minutesFor(cap));
+  return Math.min(S.stepMin+mins, lim);
+}
+const projSteps = mins => stepsAt(stepMinAfter(mins))-stepsAt(S.stepMin);
+function grantSteps(mins){
+  const before=stepsAt(S.stepMin);
+  S.stepMin=stepMinAfter(mins);
+  return stepsAt(S.stepMin)-before;
+}
 
 /* ================= helpers ================= */
 const $=s=>document.querySelector(s);
@@ -1324,11 +1410,17 @@ function refreshBar(){
   $("#where").innerHTML = nm + (onGrass()? ' <em>&middot; tall grass</em>':"");
   const b=budget(), d=TDIST[S.y*W+S.x];
   $("#stepsleft").textContent = Math.max(0,b-(d<0?0:d));
-  $("#hint").textContent = onGrass()
+  /* The ceiling outranks every other hint, and it has to: the place you are
+     most likely to be sitting when it bites is a patch of tall grass, waiting
+     on something rare. Left unsaid it reads as a broken step counter. */
+  const nt = atCeiling() ? nextTown() : null;
+  $("#hint").textContent = nt
+    ? "Your legs reach "+(secName(nt.m.sec)||nt.m.n)+". Walk in before focusing buys more ground."
+    : (onGrass()
     ? "Wild Pokemon live here. Focus now and they will come to you."
     : (m&&m.kind==="town" ? "Towns are safe, and free to cross once you arrive."
     : (m&&m.kind==="indoor" ? "Inside. Nothing wild here, but the clock still pays."
-                            : "No tall grass underfoot. Find some, or focus for steps."));
+                            : "No tall grass underfoot. Find some, or focus for steps.")));
 }
 
 /* ================= sessions ================= */
@@ -1420,7 +1512,7 @@ function paintSession(){
   const led=lead();
   /* what this session is worth depends on how far you have already come, so
      it is the difference between two points on the curve rather than a rate */
-  $("#s-earn").innerHTML="+"+(stepsAt(S.minutes+Math.floor(mins))-stepsAt(S.minutes))+" STEPS"+
+  $("#s-earn").innerHTML="+"+projSteps(Math.floor(mins))+" STEPS"+
     (led? " &middot; +"+Math.round(Math.floor(mins)*XP_PER_MIN*xpMult()*
             ((SLOW && SLOW[led.sp])||1))+" EXP TO "+
           dexName(led.sp).toUpperCase() : "");
@@ -1497,7 +1589,11 @@ function endSession(reason,endedAt){
       grew=grew.concat(on);
     }
   }
-  const gainedSteps=stepsAt(S.minutes+mins)-stepsAt(S.minutes);
+  /* What the session would have been worth with no ceiling, so the results
+     screen can say the ceiling is why it was worth less. */
+  const wantSteps=stepsAt(S.stepMin+mins)-stepsAt(S.stepMin);
+  const gainedSteps=grantSteps(mins);
+  const heldBy = wantSteps>gainedSteps ? nextTown() : null;
   S.minutes+=mins; S.sessions++; S.session=null;
   const summoned = oakWants() && !S.oakCall;
   if(summoned) S.oakCall=1;
@@ -1505,6 +1601,7 @@ function endSession(reason,endedAt){
   rebuild(); refreshBar();
   results({mins,kept,fresh,boxed,reason,place:ss.place,mode:ss.mode,summoned,dupes,
            steps:gainedSteps,
+           ceiling: heldBy ? (secName(heldBy.m.sec)||heldBy.m.n) : null,
            left:ss.mode==="revive" ? heldFossils().length : 0,
            xp:gainedXp,grew,lead:led,legend,balls:ss.balls||0,
            legendName:ss.legendName});
@@ -1627,6 +1724,9 @@ function results(r){
     (r.summoned? '<p class="s-p" style="margin-top:14px;color:var(--leaf)">'+
       '<b>'+dexKnown()+' species recorded.</b> PROF. OAK has been asking after '+
       'you — there is something for you back at the lab in PALLET TOWN.</p>':"")+
+    (r.ceiling? '<p class="s-p" style="margin-top:14px;color:var(--gold)">'+
+      'Your legs already carry you to <b>'+r.ceiling+'</b>, so the rest of that '+
+      'session bought no ground. Walk in and the map will open further.</p>':"")+
     '<div class="stat"><b>+'+gained+'</b> steps &middot; <b>'+
       Object.keys(S.caught).length+'/151</b> caught &middot; <b>'+
       S.minutes+'</b> minutes focused all told</div>'+
@@ -1723,7 +1823,7 @@ function reachedSections(b){
   return got;
 }
 $("#mapbtn").onclick=()=>{
-  const b=budget();
+  const b=budget(), capTown=atCeiling()?nextTown():null;
   const onMap=new Set([].concat(...TMGRID).filter(v=>v!==TOWNMAP.nothing));
   const got=new Set();
   for(const s of reachedSections(b))
@@ -1739,6 +1839,9 @@ $("#mapbtn").onclick=()=>{
   openSheet(
     '<h2 class="s-h">Town Map</h2>'+
     '<p class="s-p">Lit is yours to walk. The dark is Kanto you have not earned yet.</p>'+
+    (capTown? '<p class="s-p" style="color:var(--gold)">Your range stops just past <b>'+
+      (secName(capTown.m.sec)||capTown.m.n)+'</b> and stays there until you have '+
+      'walked into it. The map opens at the speed you travel, not the clock.</p>':"")+
     '<canvas id="atlas"></canvas>'+
     '<div class="legend">'+visited.map(v=>
       '<button class="legend-go" data-m="'+v.i+'">'+v.name+'</button>').join("")+'</div>'+
