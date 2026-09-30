@@ -306,11 +306,11 @@ const GIVERS  = {"287,234":{"item":"CUT","text":"THE CAPTAIN: Ohh, my stomach...
 const LOCKED  = {"37,681":"TEA","38,681":"TEA","49,673":"TEA","50,673":"TEA","64,713":"TEA","64,714":"TEA","69,712":"TEA","69,713":"TEA","265,52":"DEX2"};      /* warps that want an item first */
 const LEGENDS = [{"dex":144,"key":"articuno","lvl":50,"x":129,"y":565,"gfx":138,"odds":0.14},{"dex":145,"key":"zapdos","lvl":50,"x":164,"y":495,"gfx":136,"odds":0.14},{"dex":146,"key":"moltres","lvl":50,"gfx":137,"odds":0.14,"x":74,"y":598,"place":1},{"dex":106,"key":"hitmonlee","lvl":30,"gfx":92,"odds":0.34,"x":209,"y":638,"place":1},{"dex":107,"key":"hitmonchan","lvl":30,"gfx":92,"odds":0.34,"x":215,"y":638,"place":1},{"dex":150,"key":"mewtwo","lvl":70,"gfx":139,"odds":0.09,"x":286,"y":572,"place":1,"needs":"DEX2"}];
 const SANDBOX = 1;
-const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":30,"why":"among the machines"},{"frm":133,"into":135,"sec":142,"level":1,"why":"among the machines"},{"frm":37,"into":38,"sec":135,"level":30,"why":"in the burnt-out mansion"},{"frm":58,"into":59,"sec":135,"level":30,"why":"in the burnt-out mansion"},{"frm":133,"into":136,"sec":135,"level":1,"why":"in the burnt-out mansion"},{"frm":44,"into":45,"sec":136,"level":30,"why":"in the SAFARI ZONE"},{"frm":70,"into":71,"sec":136,"level":30,"why":"in the SAFARI ZONE"},{"frm":102,"into":103,"sec":136,"level":30,"why":"in the SAFARI ZONE"},{"frm":30,"into":31,"sec":127,"level":30,"why":"under MT. MOON"},{"frm":33,"into":34,"sec":127,"level":30,"why":"under MT. MOON"},{"frm":35,"into":36,"sec":127,"level":30,"why":"under MT. MOON"},{"frm":39,"into":40,"sec":127,"level":30,"why":"under MT. MOON"},{"frm":61,"into":62,"water":1,"level":30,"why":"out on the water"},{"frm":90,"into":91,"water":1,"level":30,"why":"out on the water"},{"frm":120,"into":121,"water":1,"level":30,"why":"out on the water"},{"frm":133,"into":134,"water":1,"level":1,"why":"out on the water"}];  /* evolutions a level alone cannot decide */
+const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the machines"},{"frm":133,"into":135,"sec":142,"level":25,"why":"among the machines"},{"frm":37,"into":38,"sec":135,"level":25,"why":"in the burnt-out mansion"},{"frm":58,"into":59,"sec":135,"level":25,"why":"in the burnt-out mansion"},{"frm":133,"into":136,"sec":135,"level":25,"why":"in the burnt-out mansion"},{"frm":44,"into":45,"sec":136,"level":25,"why":"in the SAFARI ZONE"},{"frm":70,"into":71,"sec":136,"level":25,"why":"in the SAFARI ZONE"},{"frm":102,"into":103,"sec":136,"level":25,"why":"in the SAFARI ZONE"},{"frm":30,"into":31,"sec":127,"level":25,"why":"under MT. MOON"},{"frm":33,"into":34,"sec":127,"level":25,"why":"under MT. MOON"},{"frm":35,"into":36,"sec":127,"level":25,"why":"under MT. MOON"},{"frm":39,"into":40,"sec":127,"level":25,"why":"under MT. MOON"},{"frm":61,"into":62,"water":1,"level":25,"why":"out on the water"},{"frm":90,"into":91,"water":1,"level":25,"why":"out on the water"},{"frm":120,"into":121,"water":1,"level":25,"why":"out on the water"},{"frm":133,"into":134,"water":1,"level":25,"why":"out on the water"}];  /* evolutions a level alone cannot decide */
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
-const DEX_UPS   = {"at":[50,100],"mult":[1,2,4]};   /* what filling the Pokedex is worth */
+const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "11 SEP 4f6141a";  /* so you can tell whether an update took */
+const BUILD     = "30 SEP b945aaf";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -577,6 +577,13 @@ const budget = () => SANDBOX ? 1e9 : stepsAt(S.stepMin);
    Steps are deliberately untouched — the map still opens at exactly the rate
    it always did, because that rate is the whole economy. */
 const xpMult = () => (DEX_UPS && DEX_UPS.mult && DEX_UPS.mult[S.dexUp||0]) || 1;
+/* Each upgrade also brings an EXP. SHARE: slot 2 earns from the first, slot 3
+   from the second. Every earner gets the whole session's experience — a split
+   would only move the same experience around, which is no reward at all. */
+const earnerCount = () => (DEX_UPS && DEX_UPS.earners && DEX_UPS.earners[S.dexUp||0]) || 1;
+const earners = () => S.party.slice(0, earnerCount());
+const xpFor = (mon, mins) =>
+  Math.round(mins*XP_PER_MIN*xpMult()*((SLOW && SLOW[mon.sp])||1));
 const dexKnown = () => Object.keys(S.caught).length;
 const oakWants = () => {
   const at = DEX_UPS && DEX_UPS.at ? DEX_UPS.at[S.dexUp||0] : undefined;
@@ -864,6 +871,9 @@ function evolveCheck(mon){
   return chain;
 }
 const lead = () => S.party[0] || null;
+/* One of each, except EEVEE: it has three places to grow up in and each one
+   takes the whole animal, so a player needs three of them. Shawe's rule. */
+const MANY = {"133":1};
 function give(sp,lvl){
   const mon=makeMon(sp,lvl);
   const full=S.party.length>=6;
@@ -888,6 +898,7 @@ function tidyDupes(){
   const pass=(from,to)=>{
     for(const m of from){
       const sp=String(m.sp);
+      if(MANY[sp]){ to.push(m); continue; }
       if(claimed[sp]){ gone.push(sp); continue; }
       claimed[sp]=1; to.push(best[sp]);
     }
@@ -1234,7 +1245,9 @@ function interact(){
 /* Oak is the only NPC with anything left to say after the first morning.
    Fill fifty of the Pokedex and he has one of the starters you turned down and
    an upgrade that doubles what a session is worth; fill a hundred and he has
-   the last one, and doubles it again. You come to him, in your own time. */
+   the last one, and doubles it again. Each visit brings an EXP. SHARE too, so
+   slot 2 earns after the first and slot 3 after the second. You come to him,
+   in your own time. */
 function seeOak(){
   const up = S.dexUp||0, known = dexKnown();
   const at = DEX_UPS && DEX_UPS.at ? DEX_UPS.at[up] : undefined;
@@ -1265,6 +1278,13 @@ function seeOak(){
       'properly now, and it will make far more of what you learn out there.</p>'+
     '<div class="stat" style="margin-top:14px">Every session is now worth <b>&times;'+
       xpMult()+'</b> experience</div>'+
+    (earnerCount()>((DEX_UPS.earners && DEX_UPS.earners[up]) || 1)
+      ? '<p class="s-p" style="margin-top:14px">OAK: And take this EXP. SHARE. '+
+        'Whatever is in slot '+earnerCount()+' will learn right alongside your partner '+
+        '— every bit as much, not half.</p>'+
+        '<div class="stat">Slots 1'+(earnerCount()>2?' to ':' and ')+earnerCount()+
+        ' now earn experience</div>'
+      : '')+
     '<p class="s-p" style="margin-top:10px">Your legs are your own affair, mind. '+
       'That still comes one minute at a time.</p>'+
     (boxed? '<p class="s-p">Your squad was full, so it went to BILL&#39;s PC.</p>':"")+
@@ -1509,13 +1529,11 @@ function paintSession(){
                         : (ss.mode==="fish"?"The float is still.":"The grass is still."))
       : "Quiet ground. You are banking steps.";
   }
-  const led=lead();
   /* what this session is worth depends on how far you have already come, so
      it is the difference between two points on the curve rather than a rate */
   $("#s-earn").innerHTML="+"+projSteps(Math.floor(mins))+" STEPS"+
-    (led? " &middot; +"+Math.round(Math.floor(mins)*XP_PER_MIN*xpMult()*
-            ((SLOW && SLOW[led.sp])||1))+" EXP TO "+
-          dexName(led.sp).toUpperCase() : "");
+    earners().map(m=>" &middot; +"+xpFor(m,Math.floor(mins))+" EXP TO "+
+                     dexName(m.sp).toUpperCase()).join("");
 }
 $("#s-stop").onclick=()=>endSession("stopped");
 function endSession(reason,endedAt){
@@ -1559,34 +1577,30 @@ function endSession(reason,endedAt){
          the next thing along. The test is what you HOLD, not what the POKeDEX
          has recorded: a species you traded away or evolved out of can be found
          again, and it has to be, or a swap could take the last one of
-         something a later trader asks for. */
-      const want=order.filter(sp=>!findMon(sp));
+         something a later trader asks for. EEVEE alone may come twice. */
+      const want=order.filter(sp=>MANY[sp] || !findMon(sp));
       dupes=order.length-want.length;
       kept=want.slice(0,slots);
     }
     kept.forEach(sp=>{ if(give(sp,lvlOf[sp])) boxed.push(sp); });
   }
   const fresh=kept.filter(sp=>S.caught[sp]===1);
-  const led=lead();
-  /* MAGIKARP is the exception: it earns a fraction of what anything else does,
+  /* Slot 1 always earns, and the EXP. SHAREs add slots 2 and 3. MAGIKARP is
+     the exception to the rate: it earns a fraction of what anything else does,
      so the fish is a longer job than a starter and GYARADOS is properly earned */
-  const slowness = led ? ((SLOW && SLOW[led.sp]) || 1) : 1;
-  const gainedXp=led? Math.round(mins*XP_PER_MIN*xpMult()*slowness) : 0;
+  const earned=earners().map(mon=>({mon, xp:xpFor(mon,mins), was:mon.sp}));
   let grew=[];
-  if(led && gainedXp){ led.xp+=gainedXp; grew=evolveCheck(led);
-    grew.forEach(sp=>{ S.caught[sp]=(S.caught[sp]||0)+1; S.seen[sp]=1; }); }
-  let placeGrew=null;
-  if(led){
+  const note = sp => { S.caught[sp]=(S.caught[sp]||0)+1; S.seen[sp]=1; grew.push(sp); };
+  for(const e of earned){
+    const mon=e.mon;
+    if(e.xp){ mon.xp+=e.xp; evolveCheck(mon).forEach(note); }
     /* a place can start a chain too: a Gloom that becomes Vileplume is done,
        but a Poliwhirl that becomes Poliwrath should still check its own level */
     for(let guard=0; guard<4; guard++){
-      const r=placeEvo(led, ss);
+      const r=placeEvo(mon, ss);
       if(!r) break;
-      led.sp=String(r.into); grew.push(led.sp); placeGrew=r;
-      S.caught[led.sp]=(S.caught[led.sp]||0)+1; S.seen[led.sp]=1;
-      const on=evolveCheck(led);
-      on.forEach(sp=>{ S.caught[sp]=(S.caught[sp]||0)+1; S.seen[sp]=1; });
-      grew=grew.concat(on);
+      mon.sp=String(r.into); note(mon.sp);
+      evolveCheck(mon).forEach(note);
     }
   }
   /* What the session would have been worth with no ceiling, so the results
@@ -1603,7 +1617,7 @@ function endSession(reason,endedAt){
            steps:gainedSteps,
            ceiling: heldBy ? (secName(heldBy.m.sec)||heldBy.m.n) : null,
            left:ss.mode==="revive" ? heldFossils().length : 0,
-           xp:gainedXp,grew,lead:led,legend,balls:ss.balls||0,
+           earned,grew,legend,balls:ss.balls||0,
            legendName:ss.legendName});
 }
 document.addEventListener("visibilitychange",()=>{
@@ -1710,9 +1724,9 @@ function results(r){
         '<div class="catch new"><img src="'+MONS[sp]+'" alt="">'+
         '<div><b>'+dexName(sp)+'</b><small>your partner evolved</small></div>'+
         '<div class="tag">EVOLVED</div></div>').join("")+'</div>' : "";
-  const xpHtml = r.lead
-    ? '<div class="stat" style="margin-top:14px"><b>'+dexName(r.lead.sp)+
-      '</b> gained <b>'+r.xp+'</b> EXP &middot; now level <b>'+levelOf(r.lead)+'</b></div>'
+  const xpHtml = r.earned.length
+    ? r.earned.map(e=>'<div class="stat" style="margin-top:14px"><b>'+dexName(e.was)+
+      '</b> gained <b>'+e.xp+'</b> EXP &middot; now level <b>'+levelOf(e.mon)+'</b></div>').join("")
     : '<p class="s-p" style="margin-top:14px">Nothing in slot 1, so no EXP was earned.</p>';
   openSheet(
     '<h2 class="s-h">'+(r.reason==="broken"?"Session broken":"Session complete")+'</h2>'+
@@ -1740,11 +1754,12 @@ function monCard(mon,where,i){
   const lv=levelOf(mon), nx=toNext(mon);
   const pct=nx? Math.round(nx.have/nx.need*100) : 100;
   const sel=picked && picked.where===where && picked.i===i;
+  const earns=where==="party" && i<earnerCount();
   const hms=Object.keys(HM_USERS).filter(h=>(HM_USERS[h]||[]).indexOf(mon.sp)>=0 && has(h));
-  return '<button class="mon'+(sel?" sel":"")+(where==="party"&&i===0?" lead":"")+'" '+
+  return '<button class="mon'+(sel?" sel":"")+(earns?" lead":"")+'" '+
     'data-w="'+where+'" data-i="'+i+'"><img src="'+MONS[mon.sp]+'" alt="">'+
     '<div class="mon-t"><b>'+dexName(mon.sp)+'</b>'+
-      '<small>Lv '+lv+(where==="party"&&i===0?' &middot; earning':'')+
+      '<small>Lv '+lv+(earns?' &middot; earning':'')+
       (hms.length? ' &middot; can use '+hms.join(", "):'')+'</small>'+
       '<div class="xpbar"><i style="width:'+pct+'%"></i></div>'+
       '<small>'+(nx? nx.have+" / "+nx.need+" EXP to Lv "+(lv+1) : "at level 100")+'</small>'+
@@ -1758,7 +1773,9 @@ function openTeam(){
   const bag=Object.keys(HM_NAME).concat(["OLDROD","GOODROD","SUPERROD"]);
   openSheet(
     '<h2 class="s-h">Squad</h2>'+
-    '<p class="s-p">Only the Pokemon in slot 1 earns experience while you focus. '+
+    '<p class="s-p">'+(earnerCount()>1
+      ? 'The first '+earnerCount()+' slots earn experience while you focus. '
+      : 'Only the Pokemon in slot 1 earns experience while you focus. ')+
       'Tap one to pick it up, then tap another to swap them — BILL&#39;s PC included.</p>'+
     '<div class="mons">'+slots.join("")+'</div>'+
     '<div class="divide"></div><h2 class="s-h">Bag</h2>'+
