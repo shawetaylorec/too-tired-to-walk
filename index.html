@@ -310,7 +310,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "7 OCT 1abb354";  /* so you can tell whether an update took */
+const BUILD     = "7 OCT 82fc010";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -874,6 +874,53 @@ const lead = () => S.party[0] || null;
 /* One of each, except EEVEE: it has three places to grow up in and each one
    takes the whole animal, so a player needs three of them. Shawe's rule. */
 const MANY = {"133":1};
+/* What a species can become, by a level or by a place. */
+function evolvesTo(sp){
+  const out=[], e=SPECIES[sp] && SPECIES[sp].evo;
+  if(e) out.push(String(e[1]));
+  for(const r of PLACE_EVO||[]) if(String(r.frm)===sp) out.push(String(r.into));
+  return out;
+}
+function leadsTo(sp, to){
+  const seen={}, todo=[sp];
+  while(todo.length){
+    const s=todo.pop();
+    if(s===to) return true;
+    if(seen[s]) continue;
+    seen[s]=1; todo.push(...evolvesTo(s));
+  }
+  return false;
+}
+/* How many of a species you may hold. One, plus one for every trader still
+   waiting on it — or on something it grows into — so a swap never costs the
+   one you were keeping. Only while what he wants can still evolve: hand over
+   a GOLDUCK and the Pokedex already has it and nothing was lost, but hand
+   over your only POLIWHIRL and POLIWRATH is gone with it. Once the trade is
+   done the spare stops being kept. Shawe's rule. */
+function allowed(sp){
+  sp=String(sp);
+  if(MANY[sp]) return Infinity;
+  let n=1;
+  for(const key in TRADERS){
+    if(S.traded && S.traded[key]) continue;
+    const w=String(TRADERS[key].wants);
+    if(evolvesTo(w).length && leadsTo(sp,w)) n++;
+  }
+  return n;
+}
+function heldOf(sp){
+  const at=[];
+  S.party.forEach((m,i)=>{ if(String(m.sp)===String(sp)) at.push(["party",i]); });
+  S.box.forEach((m,i)=>{ if(String(m.sp)===String(sp)) at.push(["box",i]); });
+  return at;
+}
+/* the copy a trader takes and an upgrade replaces — never your best one */
+function weakest(sp){
+  let best=null;
+  for(const at of heldOf(sp))
+    if(!best || (S[at[0]][at[1]].xp||0) < (S[best[0]][best[1]].xp||0)) best=at;
+  return best;
+}
 function give(sp,lvl){
   const mon=makeMon(sp,lvl);
   const full=S.party.length>=6;
@@ -889,18 +936,17 @@ const dexName = sp => (SPECIES[sp]||{name:"?"}).name;
    that one was sitting in the PC it takes the squad slot its weaker twin held
    — the squad keeps its shape, and slot 1 keeps whatever was earning. */
 function tidyDupes(){
-  const best={};
-  for(const m of S.party.concat(S.box)){
-    const sp=String(m.sp);
-    if(!best[sp] || (m.xp||0)>(best[sp].xp||0)) best[sp]=m;
-  }
+  const best={};                     /* each species, strongest first */
+  for(const m of S.party.concat(S.box)) (best[String(m.sp)]=best[String(m.sp)]||[]).push(m);
+  for(const sp in best) best[sp].sort((a,b)=>(b.xp||0)-(a.xp||0));
   const claimed={}, party=[], box=[], gone=[];
   const pass=(from,to)=>{
     for(const m of from){
       const sp=String(m.sp);
       if(MANY[sp]){ to.push(m); continue; }
-      if(claimed[sp]){ gone.push(sp); continue; }
-      claimed[sp]=1; to.push(best[sp]);
+      const k=claimed[sp]||0;
+      if(k>=allowed(sp)){ gone.push(sp); continue; }
+      claimed[sp]=k+1; to.push(best[sp][k]);
     }
   };
   pass(S.party,party); pass(S.box,box);
@@ -1330,7 +1376,7 @@ function seeTrader(key){
   const gives=String(t.gives), wants=String(t.wants);
   if(S.traded && S.traded[key])
     return say("\"Look after it. It has come a long way from home.\"");
-  const held=findMon(wants);
+  const held=weakest(wants);
   if(!held)
     return say("\"I will swap my "+dexName(gives).toUpperCase()+" for a "+
                dexName(wants).toUpperCase()+", if you ever find one.\"");
@@ -1341,7 +1387,9 @@ function seeTrader(key){
     '<div class="catches">'+
       '<div class="catch"><img src="'+MONS[wants]+'" alt="">'+
       '<div><b>'+dexName(wants)+'</b><small>yours, level '+levelOf(
-        (S[held[0]])[held[1]])+' — you would lose it</small></div></div>'+
+        (S[held[0]])[held[1]])+(heldOf(wants).length>1
+          ? ' — your weaker one, you keep the other' : ' — you would lose it')+
+        '</small></div></div>'+
       '<div class="catch new"><img src="'+MONS[gives]+'" alt="">'+
       '<div><b>'+dexName(gives)+'</b><small>theirs</small></div>'+
       (S.caught[gives]?'':'<div class="tag">NEW</div>')+'</div>'+
@@ -1350,7 +1398,7 @@ function seeTrader(key){
     '<button class="close" id="nobtn">Keep what you have</button>');
   $("#nobtn").onclick=shut;
   $("#closebtn").onclick=()=>{
-    const at=findMon(wants);
+    const at=weakest(wants);
     if(!at){ shut(); return; }
     const mon=(S[at[0]])[at[1]];
     (S[at[0]]).splice(at[1],1);
@@ -1542,7 +1590,7 @@ function endSession(reason,endedAt){
   $("#session").classList.remove("on");
   const mins=Math.floor(gameMin((endedAt||Date.now())-ss.start));
   const slots=SLOT_AT.filter(m=>mins>=m).length;
-  let kept=[], lvlOf={}, boxed=[], legend=null, dupes=0;
+  let kept=[], lvlOf={}, boxed=[], legend=null, dupes=0, ups=[];
 
   if(ss.mode==="revive"){
     for(const dex of ss.got||[]){
@@ -1571,20 +1619,32 @@ function endSession(reason,endedAt){
          its slot to any three new species rolled alongside it. */
       const pct=sp=>{ if(sp===String(MEW)) return MEW_ODDS*100;
         const r=tbl.find(z=>String(z[0])===sp); return r?r[1]:100; };
-      order.sort((a,b)=>{
-        const ca=S.caught[a]?1:0, cb=S.caught[b]?1:0;
-        if(ca!==cb) return ca-cb;
-        return pct(a)-pct(b);
-      });
-      /* One of each. Anything already in the squad or in BILL's PC is let go
-         rather than handed over a second time, and the slot falls through to
-         the next thing along. The test is what you HOLD, not what the POKeDEX
-         has recorded: a species you traded away or evolved out of can be found
-         again, and it has to be, or a swap could take the last one of
-         something a later trader asks for. EEVEE alone may come twice. */
-      const want=order.filter(sp=>MANY[sp] || !findMon(sp));
+      /* One of each — or as many as allowed() says. Past that, a stronger
+         one is still worth a slot: you keep it and let the old one go, which
+         here means the one you hold simply takes the new level, in the same
+         place in the squad, so slot 1 keeps earning. The test is what you
+         HOLD, not what the POKeDEX has recorded: a species you traded away or
+         evolved out of can be found again, and it has to be, or a swap could
+         take the last one of something a later trader asks for.
+         Never caught comes first, then room for one more, then a stronger
+         copy of one you hold; rarest first within each. */
+      const room = sp => heldOf(sp).length < allowed(sp);
+      const weak = sp => { const at=weakest(sp); return at ? S[at[0]][at[1]] : null; };
+      const better = sp => { const m=weak(sp); return !!m && lvlOf[sp]>levelOf(m); };
+      const tier = {};
+      for(const sp of order) tier[sp] = !S.caught[sp] ? 0 : room(sp) ? 1 : better(sp) ? 2 : 3;
+      order.sort((a,b)=> tier[a]-tier[b] || pct(a)-pct(b));
+      const want=order.filter(sp=>tier[sp]<3);
       dupes=order.length-want.length;
-      kept=want.slice(0,slots);
+      for(const sp of want.slice(0,slots)){
+        if(tier[sp]<2){ kept.push(sp); continue; }
+        const m=weak(sp), from=levelOf(m);
+        /* left at the wild level even past its evolution level: it grows
+           up the first time it earns, as a real one only does on a level-up */
+        m.xp=curveOf(sp)[lvlOf[sp]];
+        S.caught[sp]=(S.caught[sp]||0)+1;
+        ups.push({sp, from, to:lvlOf[sp]});
+      }
     }
     kept.forEach(sp=>{ if(give(sp,lvlOf[sp])) boxed.push(sp); });
   }
@@ -1617,7 +1677,7 @@ function endSession(reason,endedAt){
   if(summoned) S.oakCall=1;
   persist();
   rebuild(); refreshBar();
-  results({mins,kept,fresh,boxed,reason,place:ss.place,mode:ss.mode,summoned,dupes,
+  results({mins,kept,fresh,boxed,reason,place:ss.place,mode:ss.mode,summoned,dupes,ups,
            steps:gainedSteps,
            ceiling: heldBy ? (secName(heldBy.m.sec)||heldBy.m.n) : null,
            left:ss.mode==="revive" ? heldFossils().length : 0,
@@ -1709,18 +1769,23 @@ function results(r){
         ' broke out of every one. It is still there. Come back when you have '+
         'more time to give it.</p>';
   }else{
-    body = r.kept.length
+    body = r.kept.length || r.ups.length
       ? '<div class="catches">'+r.kept.map(sp=>
           '<div class="catch'+(r.fresh.indexOf(sp)!==-1?" new":"")+'">'+
           '<img src="'+MONS[sp]+'" alt=""><div><b>'+dexName(sp)+'</b>'+
           '<small>'+(r.mode==="fish"?"reeled in":"caught in the grass")+'</small></div>'+
-          (r.fresh.indexOf(sp)!==-1?'<div class="tag">NEW</div>':'')+'</div>').join("")+'</div>'
+          (r.fresh.indexOf(sp)!==-1?'<div class="tag">NEW</div>':'')+'</div>').join("")+
+        r.ups.map(u=>
+          '<div class="catch"><img src="'+MONS[u.sp]+'" alt=""><div><b>'+dexName(u.sp)+'</b>'+
+          '<small>a stronger one, level '+u.from+' &rarr; '+u.to+
+          ' — you let the old one go</small></div><div class="tag">STRONGER</div></div>').join("")+
+        '</div>'
       : '<p class="s-p">'+(r.mins<SLOT_AT[0]
           ? "Not long enough for a catch — the first slot needs "+SLOT_AT[0]+" minutes."
           : r.dupes
           ? "No new POKeMON. "+(r.dupes===1 ? "The one that turned up was"
                                             : "Everything that turned up was")+
-            " already yours, so you let it go."
+            " already yours, and no stronger, so you let it go."
           : "Nothing was biting.")+'</p>';
   }
   const grewHtml = r.grew.length
