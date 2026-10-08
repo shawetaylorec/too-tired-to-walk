@@ -310,7 +310,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "8 OCT 8de2cfd";  /* so you can tell whether an update took */
+const BUILD     = "8 OCT e6700b4";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -1510,6 +1510,7 @@ function startSession(mode,extra){
   $("#session").classList.add("on");
   const tag = mode==="fish" ? " · fishing" : mode==="legend" ? " · the hunt"
             : mode==="revive" ? " · the lab"
+            : surfing() ? " · surfing"
             : (onGrass()? " · tall grass":"");
   $("#s-place").textContent=(S.session.place+tag).toUpperCase();
   $("#s-sub").textContent = mode==="legend"
@@ -1524,6 +1525,9 @@ function startSession(mode,extra){
 function sessionTable(ss){
   if(ss.mode==="fish") return encTable(ss.rod);
   if(ss.mode==="legend" || ss.mode==="revive") return null;
+  /* Afloat, the sea is the grass. Leaving this out meant every surf table in
+     the ROM was extracted, counted by howlong.py and never once rolled. */
+  if(ss.afloat) return encTable("water");
   return onGrassAt(ss) ? encTable("land") : null;
 }
 function onGrassAt(){ return !!(META[S.y*W+S.x]&M_LAND); }
@@ -1573,8 +1577,10 @@ function paintSession(){
       : "NOTHING WILL BITE HERE";
     $("#s-roll").textContent = tbl
       ? (ss.rolls.length? (ss.mode==="fish"?"Something tugged the line. ×"
-                                           :"Something rustled in the grass. ×")+ss.rolls.length
-                        : (ss.mode==="fish"?"The float is still.":"The grass is still."))
+                           : ss.afloat?"Something surfaced nearby. ×"
+                                      :"Something rustled in the grass. ×")+ss.rolls.length
+                        : (ss.mode==="fish"?"The float is still."
+                           : ss.afloat?"The water is calm.":"The grass is still."))
       : "Quiet ground. You are banking steps.";
   }
   /* what this session is worth depends on how far you have already come, so
@@ -1677,7 +1683,8 @@ function endSession(reason,endedAt){
   if(summoned) S.oakCall=1;
   persist();
   rebuild(); refreshBar();
-  results({mins,kept,fresh,boxed,reason,place:ss.place,mode:ss.mode,summoned,dupes,ups,
+  results({mins,kept,fresh,boxed,reason,place:ss.place,mode:ss.mode,afloat:ss.afloat,
+           summoned,dupes,ups,
            steps:gainedSteps,
            ceiling: heldBy ? (secName(heldBy.m.sec)||heldBy.m.n) : null,
            left:ss.mode==="revive" ? heldFossils().length : 0,
@@ -1773,7 +1780,8 @@ function results(r){
       ? '<div class="catches">'+r.kept.map(sp=>
           '<div class="catch'+(r.fresh.indexOf(sp)!==-1?" new":"")+'">'+
           '<img src="'+MONS[sp]+'" alt=""><div><b>'+dexName(sp)+'</b>'+
-          '<small>'+(r.mode==="fish"?"reeled in":"caught in the grass")+'</small></div>'+
+          '<small>'+(r.mode==="fish"?"reeled in":r.afloat?"caught on the water"
+                                  :"caught in the grass")+'</small></div>'+
           (r.fresh.indexOf(sp)!==-1?'<div class="tag">NEW</div>':'')+'</div>').join("")+
         r.ups.map(u=>
           '<div class="catch"><img src="'+MONS[u.sp]+'" alt=""><div><b>'+dexName(u.sp)+'</b>'+
