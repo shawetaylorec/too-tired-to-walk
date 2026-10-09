@@ -310,7 +310,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "9 OCT 330b7e9";  /* so you can tell whether an update took */
+const BUILD     = "9 OCT e6d7d36";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -377,6 +377,11 @@ const CAP_SLACK=50;
 const ROLL_MIN=15, SLOT_AT=[15,60,120], GRACE_MS=10000;
 const BALL_AT=[0,60,120];          /* extra legendary ball per 15 min, at these minutes */
 const BALL_ODDS=0.14;              /* one Ultra Ball at an almost-fainted legendary */
+/* The first film. With a PIKACHU leading the squad, every ball thrown at
+   MEWTWO is a chance MEW comes to see. A RAICHU does not count, so a player who
+   evolved theirs goes back to VIRIDIAN FOREST for another. One shot: the hunt
+   ends when MEWTWO is caught. Shawe's easter egg, and deliberately not hinted. */
+const MEWTWO=150, PIKACHU="25", FILM_ODDS=0.025;
 const gameMs  = realMs => realMs*SPEED;
 const gameMin = realMs => realMs*SPEED/60000;
 /* 267 ms is 16 frames for 16 px: one pixel per frame. 133/67/33 are the only
@@ -1547,6 +1552,8 @@ function paintSession(){
       for(let k=0;k<Math.max(1,n);k++){
         ss.balls++;
         if(!ss.caught && Math.random()<(ss.odds||BALL_ODDS)) ss.caught=1;
+        if(ss.legendDex===MEWTWO && !ss.mew && S.party[0] && S.party[0].sp===PIKACHU
+           && !heldOf(String(MEW)).length && Math.random()<FILM_ODDS) ss.mew=1;
       }
     }else if(ss.mode==="revive"){
       const benches=Math.max(1, BALL_AT.filter(m=>mins>=m).length);
@@ -1609,6 +1616,7 @@ function endSession(reason,endedAt){
     if(ss.caught){ legend=String(ss.legendDex);
       boxed.push(give(legend, ss.legendLvl||50));
       S.legend[ss.legendKey]=1; if(ss.legendTile!==undefined) S.cleared[ss.legendTile]=1; }
+    if(ss.mew){ kept.push(String(MEW)); if(give(String(MEW), MEW_LEVEL)) boxed.push(String(MEW)); }
   }else{
     const order=[];
     for(const r of ss.rolls){
@@ -1775,6 +1783,15 @@ function results(r){
       : '<p class="s-p">'+r.balls+' balls thrown, and '+(r.legendName||"it")+
         ' broke out of every one. It is still there. Come back when you have '+
         'more time to give it.</p>';
+    if(r.kept.indexOf(String(MEW))!==-1)
+      body += '<div class="catches"'+(r.legend?'':' style="margin-top:12px"')+'>'+
+        '<div class="catch new"><img src="'+MONS[String(MEW)]+'" alt="">'+
+        '<div><b>'+dexName(String(MEW))+'</b><small>Lv '+MEW_LEVEL+
+        '</small></div><div class="tag">'+(r.fresh.indexOf(String(MEW))!==-1?'NEW':'CAUGHT')+
+        '</div></div></div>'+
+        '<p class="s-p" style="margin-top:12px">MEWTWO: I see now that the circumstances '+
+        'of one&rsquo;s birth are irrelevant; it is what you do with the gift of life '+
+        'that determines who you are.</p>';
   }else{
     body = r.kept.length || r.ups.length
       ? '<div class="catches">'+r.kept.map(sp=>
