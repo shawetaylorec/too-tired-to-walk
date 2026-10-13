@@ -108,6 +108,27 @@ canvas#cv{display:block;width:100%;height:auto;touch-action:none}
           font-family:var(--px);font-size:11.5px;letter-spacing:.03em;color:#fff;
           border:3px solid #8f2a1f;box-shadow:0 4px 0 #7a241a}
 .focusbtn:active{transform:translateY(3px);box-shadow:none}
+.mid{display:flex;flex-direction:column;align-items:center;gap:13px}
+/* SCAN is shaped like the handheld's START and SELECT: a slanted rubber pill
+   in the middle under everything else, with a little radar in it that sweeps
+   while it looks. The sweep is a conic gradient turned by `.on`. */
+.scanbtn{display:flex;align-items:center;gap:6px;height:24px;padding:0 11px 0 6px;
+         border-radius:12px;background:var(--void-2);border:2px solid var(--edge);
+         box-shadow:0 3px 0 #0e1014;transform:rotate(-8deg);
+         font-family:var(--px);font-size:10.5px;letter-spacing:.12em;color:var(--dim)}
+.scanbtn:active{transform:rotate(-8deg) translateY(3px);box-shadow:none}
+.scanbtn .radar{position:relative;width:13px;height:13px;border-radius:50%;
+                border:1.5px solid #3c6f86;background:#0c1a20;overflow:hidden}
+.scanbtn .radar::before{content:"";position:absolute;inset:0;border-radius:50%;
+                background:conic-gradient(from 0deg,transparent 0 270deg,rgba(110,214,240,.85) 360deg);
+                opacity:.35}
+.scanbtn .radar::after{content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;
+                margin:-1.5px 0 0 -1.5px;border-radius:50%;background:#6ed6f0}
+.scanbtn.on{color:#bfeefa;border-color:#3c6f86}
+.scanbtn.on .radar{box-shadow:0 0 8px rgba(110,214,240,.7)}
+.scanbtn.on .radar::before{opacity:1;animation:sweep .6s linear infinite}
+@keyframes sweep{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){ .scanbtn.on .radar::before{animation:none} }
 .hint{padding:0 20px 18px;font-size:12px;line-height:1.5;color:var(--dim);text-align:center}
 .colophon{margin:auto 0 0;padding:26px 26px 20px;font-size:10.5px;line-height:1.55;
           color:var(--dim);opacity:.62;text-align:center;text-wrap:balance}
@@ -289,7 +310,10 @@ textarea{width:100%;height:76px;margin-top:9px;padding:9px;border-radius:8px;
       <button class="r" data-d="right" aria-label="Right">&#9654;</button>
       <button class="d" data-d="down" aria-label="Down">&#9660;</button>
     </div>
-    <button class="focusbtn" id="focusbtn">FOCUS</button>
+    <div class="mid">
+      <button class="focusbtn" id="focusbtn">FOCUS</button>
+      <button class="scanbtn" id="scanbtn" aria-label="Scan for wild Pokemon you have not caught"><span class="radar"></span>SCAN</button>
+    </div>
     <div class="ab">
       <button class="bbtn" id="bbtn" aria-label="Hold to run">B</button>
       <button class="abtn" id="abtn" aria-label="Talk, or act on what you face">A</button>
@@ -343,7 +367,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "11 OCT 6472c04";  /* so you can tell whether an update took */
+const BUILD     = "13 OCT b4f9ff8";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -1563,6 +1587,45 @@ async function grabWake(){
 function dropWake(){ try{ if(wake) wake.release(); }catch(e){} wake=null; }
 
 $("#focusbtn").onclick=()=>startSession("focus");
+
+/* ================= scan ================= */
+/* What is still out there. The wild table is the one a session here would
+   roll — the sea while surfing, the grass otherwise — but for the whole map,
+   not just this tile, so a scan from the path still answers for the grass
+   beside it. Rods only come into it on or facing water, and are named as a
+   group rather than one message each; when everything is caught they are not
+   mentioned at all. MEW is in no table and is never counted. */
+function scanReport(){
+  const m=here();
+  const [fx,fy]=facing(), fi=fy*W+fx;
+  const afloat=surfing();
+  const wetAhead = !afloat && fx>=0 && fy>=0 && fx<W && fy<H && !!(META[fi]&M_WATER);
+  const enc=(m&&m.enc)||{};
+  const pond=(afloat ? m : wetAhead ? mapAt(fx,fy) : null);
+  const rodEnc=(pond&&pond.enc)||{};
+  const missing = tbl => tbl ? [...new Set(tbl.map(r=>String(r[0])))].filter(sp=>!S.caught[sp]).length : 0;
+  const wild = enc[afloat ? "water" : "land"] || null;
+  const rods = ["old","good","super"].filter(r=>rodEnc[r]);
+  if(!wild && !rods.length) return "No wild POKeMON live here.";
+  const n = missing(wild);
+  const left = rods.filter(r=>missing(rodEnc[r]));
+  const rodTxt = left.length===0 ? "" :
+    left.map(r=>RODNAME[r].split(" ")[0]).join(", ").replace(/, ([^,]*)$/," and $1") +
+    (left.length>1 ? " RODS" : " ROD");
+  if(!n && !left.length) return "You have caught all the wild POKeMON in this area.";
+  if(!wild) return "There are still POKeMON to catch here with the "+rodTxt+".";
+  const head = n===1 ? "There is 1 wild POKeMON here that you have not caught yet"
+             : n ? "There are "+n+" wild POKeMON here that you have not caught yet"
+             : "You have caught all the wild POKeMON in this area";
+  if(!left.length) return head+".";
+  return head+(n ? ", and more to catch with the " : ", but there are still POKeMON to catch with the ")+rodTxt+".";
+}
+let scanning=null;
+$("#scanbtn").onclick=()=>{
+  if(S.session || introOn() || $("#sheet").classList.contains("on") || scanning) return;
+  const b=$("#scanbtn"); b.classList.add("on"); hush();
+  scanning=setTimeout(()=>{ scanning=null; b.classList.remove("on"); say(scanReport(),5200); }, 650);
+};
 function startSession(mode,extra){
   if(S.session) return;
   const m=here();
