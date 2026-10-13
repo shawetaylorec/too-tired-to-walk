@@ -108,22 +108,25 @@ canvas#cv{display:block;width:100%;height:auto;touch-action:none}
           font-family:var(--px);font-size:11.5px;letter-spacing:.03em;color:#fff;
           border:3px solid #8f2a1f;box-shadow:0 4px 0 #7a241a}
 .focusbtn:active{transform:translateY(3px);box-shadow:none}
-.mid{display:flex;flex-direction:column;align-items:center;gap:13px}
-/* SCAN is shaped like the handheld's START and SELECT: a slanted rubber pill
-   in the middle under everything else, with a little radar in it that sweeps
-   while it looks. The sweep is a conic gradient turned by `.on`. */
-.scanbtn{display:flex;align-items:center;gap:6px;height:24px;padding:0 11px 0 6px;
-         border-radius:12px;background:var(--void-2);border:2px solid var(--edge);
-         box-shadow:0 3px 0 #0e1014;transform:rotate(-8deg);
-         font-family:var(--px);font-size:10.5px;letter-spacing:.12em;color:var(--dim)}
-.scanbtn:active{transform:rotate(-8deg) translateY(3px);box-shadow:none}
-.scanbtn .radar{position:relative;width:13px;height:13px;border-radius:50%;
-                border:1.5px solid #3c6f86;background:#0c1a20;overflow:hidden}
+/* FOCUS stays exactly where it was, level with the middle of the d-pad; the
+   column hangs from it rather than centring, so SCAN drops below the row. */
+.mid{display:flex;flex-direction:column;align-items:center;gap:24px;
+     align-self:flex-start;margin-top:35px}
+/* SCAN is shaped like the handheld's START and SELECT: a rubber pill in the
+   middle under everything else, with a little radar in it that sweeps while
+   it looks. The sweep is a conic gradient turned by `.on`. */
+.scanbtn{display:flex;align-items:center;gap:8px;height:34px;padding:0 16px 0 9px;
+         border-radius:17px;background:var(--void-2);border:2px solid var(--edge);
+         box-shadow:0 4px 0 #0e1014;
+         font-family:var(--px);font-size:13px;letter-spacing:.12em;color:var(--dim)}
+.scanbtn:active{transform:translateY(4px);box-shadow:none}
+.scanbtn .radar{position:relative;width:17px;height:17px;border-radius:50%;
+                border:2px solid #3c6f86;background:#0c1a20;overflow:hidden}
 .scanbtn .radar::before{content:"";position:absolute;inset:0;border-radius:50%;
                 background:conic-gradient(from 0deg,transparent 0 270deg,rgba(110,214,240,.85) 360deg);
                 opacity:.35}
-.scanbtn .radar::after{content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;
-                margin:-1.5px 0 0 -1.5px;border-radius:50%;background:#6ed6f0}
+.scanbtn .radar::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;
+                margin:-2px 0 0 -2px;border-radius:50%;background:#6ed6f0}
 .scanbtn.on{color:#bfeefa;border-color:#3c6f86}
 .scanbtn.on .radar{box-shadow:0 0 8px rgba(110,214,240,.7)}
 .scanbtn.on .radar::before{opacity:1;animation:sweep .6s linear infinite}
@@ -367,7 +370,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "13 OCT b4f9ff8";  /* so you can tell whether an update took */
+const BUILD     = "13 OCT 64b6e32";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
