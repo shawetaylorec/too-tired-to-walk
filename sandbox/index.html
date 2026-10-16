@@ -370,7 +370,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "13 OCT 64b6e32";  /* so you can tell whether an update took */
+const BUILD     = "16 OCT c50790f";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -1727,7 +1727,8 @@ function endSession(reason,endedAt){
   $("#session").classList.remove("on");
   const mins=Math.floor(gameMin((endedAt||Date.now())-ss.start));
   const slots=SLOT_AT.filter(m=>mins>=m).length;
-  let kept=[], lvlOf={}, boxed=[], legend=null, dupes=0, ups=[];
+  let kept=[], keptLv=[], boxed=[], legend=null, dupes=0, ups=[];
+  const before=Object.assign({}, S.caught);   /* what NEW means on the results */
 
   if(ss.mode==="revive"){
     for(const dex of ss.got||[]){
@@ -1742,11 +1743,14 @@ function endSession(reason,endedAt){
       S.legend[ss.legendKey]=1; if(ss.legendTile!==undefined) S.cleared[ss.legendTile]=1; }
     if(ss.mew){ kept.push(String(MEW)); if(give(String(MEW), MEW_LEVEL)) boxed.push(String(MEW)); }
   }else{
-    const order=[];
+    /* One entry per species, at the best level rolled — except the MANY
+       species, where every roll is its own entry, or three EEVEEs in one
+       sitting would only ever bring one home. */
+    const order=[], bySp={};
     for(const r of ss.rolls){
       const sp=String(r[0]), lv=r[1];
-      if(!(sp in lvlOf)){ lvlOf[sp]=lv; order.push(sp); }
-      else lvlOf[sp]=Math.max(lvlOf[sp],lv);
+      if(MANY[sp] || !bySp[sp]){ const e={sp,lv}; order.push(e); if(!MANY[sp]) bySp[sp]=e; }
+      else bySp[sp].lv=Math.max(bySp[sp].lv,lv);
     }
     if(slots && order.length){
       /* rarest uncaught first, so an area keeps handing you the next missing
@@ -1765,28 +1769,32 @@ function endSession(reason,endedAt){
          evolved out of can be found again, and it has to be, or a swap could
          take the last one of something a later trader asks for.
          Never caught comes first, then room for one more, then a stronger
-         copy of one you hold; rarest first within each. */
-      const room = sp => heldOf(sp).length < allowed(sp);
+         copy of one you hold; rarest first within each.
+         Room counts the whole line from here on up: a PERSIAN is the
+         MEOWTH you already had, so a second MEOWTH would sit in the PC with
+         nothing to do. allowed() still makes room for one a trader wants. */
+      const line = sp => S.party.concat(S.box).filter(m=>leadsTo(sp,String(m.sp))).length;
+      const room = sp => line(sp) < allowed(sp);
       const weak = sp => { const at=weakest(sp); return at ? S[at[0]][at[1]] : null; };
-      const better = sp => { const m=weak(sp); return !!m && lvlOf[sp]>levelOf(m); };
-      const tier = {};
-      for(const sp of order) tier[sp] = !S.caught[sp] ? 0 : room(sp) ? 1 : better(sp) ? 2 : 3;
-      order.sort((a,b)=> tier[a]-tier[b] || pct(a)-pct(b));
-      const want=order.filter(sp=>tier[sp]<3);
+      const better = e => { const m=weak(e.sp); return !!m && e.lv>levelOf(m); };
+      for(const e of order) e.tier = !S.caught[e.sp] ? 0 : room(e.sp) ? 1 : better(e) ? 2 : 3;
+      order.sort((a,b)=> a.tier-b.tier || pct(a.sp)-pct(b.sp));
+      const want=order.filter(e=>e.tier<3);
       dupes=order.length-want.length;
-      for(const sp of want.slice(0,slots)){
-        if(tier[sp]<2){ kept.push(sp); continue; }
+      for(const e of want.slice(0,slots)){
+        const sp=e.sp;
+        if(e.tier<2){ kept.push(sp); keptLv.push(e.lv); continue; }
         const m=weak(sp), from=levelOf(m);
         /* left at the wild level even past its evolution level: it grows
            up the first time it earns, as a real one only does on a level-up */
-        m.xp=curveOf(sp)[lvlOf[sp]];
+        m.xp=curveOf(sp)[e.lv];
         S.caught[sp]=(S.caught[sp]||0)+1;
-        ups.push({sp, from, to:lvlOf[sp]});
+        ups.push({sp, from, to:e.lv});
       }
     }
-    kept.forEach(sp=>{ if(give(sp,lvlOf[sp])) boxed.push(sp); });
+    kept.forEach((sp,i)=>{ if(give(sp,keptLv[i])) boxed.push(sp); });
   }
-  const fresh=kept.filter(sp=>S.caught[sp]===1);
+  const fresh=kept.filter(sp=>!before[sp]);
   /* Slot 1 always earns, and the EXP. SHAREs add slots 2 and 3. MAGIKARP is
      the exception to the rate: it earns a fraction of what anything else does,
      so the fish is a longer job than a starter and GYARADOS is properly earned */
