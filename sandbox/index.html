@@ -370,7 +370,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "16 OCT c50790f";  /* so you can tell whether an update took */
+const BUILD     = "20 OCT ab453c8";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -951,9 +951,11 @@ function placeEvo(mon, ss){
   }
   return null;
 }
-function evolveCheck(mon){
+/* `steps` is how many evolutions it may take: one per level gained, as in the
+   real game, where a MACHOP past 36 still stops at MACHOKE on its level-up. */
+function evolveCheck(mon, steps){
   const chain=[];
-  for(let guard=0;guard<5;guard++){
+  for(let guard=0;guard<Math.min(steps===undefined?5:steps,5);guard++){
     const e=SPECIES[mon.sp] && SPECIES[mon.sp].evo;
     if(!e || levelOf(mon)<e[0] || !SPECIES[String(e[1])]) break;
     mon.sp=String(e[1]); chain.push(mon.sp);
@@ -1803,14 +1805,24 @@ function endSession(reason,endedAt){
   const note = sp => { S.caught[sp]=(S.caught[sp]||0)+1; S.seen[sp]=1; grew.push(sp); };
   for(const e of earned){
     const mon=e.mon;
-    if(e.xp){ mon.xp+=e.xp; evolveCheck(mon).forEach(note); }
-    /* a place can start a chain too: a Gloom that becomes Vileplume is done,
-       but a Poliwhirl that becomes Poliwrath should still check its own level */
-    for(let guard=0; guard<4; guard++){
+    /* Only a level gained evolves, and each level gained evolves it once, as
+       in the real game: a MACHOP caught at 48 is a MACHOP until 49, a MACHOKE
+       at 49, and a MACHAMP at 50. */
+    const was=levelOf(mon);
+    if(e.xp) mon.xp+=e.xp;
+    let steps=levelOf(mon)-was;
+    const grow = () => { const c=evolveCheck(mon, steps); steps-=c.length; c.forEach(note); };
+    grow();
+    /* A place is a stone, and it costs a level gained like any other: walking
+       there for a two-minute sit would otherwise be an evolution with no
+       session behind it. Shawe's rule. A place can start a chain too: a Gloom
+       that becomes Vileplume is done, but a Poliwhirl that becomes Poliwrath
+       should still check its own level, if it has a level left to spend. */
+    for(let guard=0; guard<4 && steps>0; guard++){
       const r=placeEvo(mon, ss);
       if(!r) break;
-      mon.sp=String(r.into); note(mon.sp);
-      evolveCheck(mon).forEach(note);
+      mon.sp=String(r.into); note(mon.sp); steps--;
+      grow();
     }
   }
   /* What the session would have been worth with no ceiling, so the results
