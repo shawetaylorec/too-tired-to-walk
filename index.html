@@ -370,7 +370,7 @@ const PLACE_EVO = [{"frm":25,"into":26,"sec":142,"level":25,"why":"among the mac
 const OAK_AT    = {"x":325,"y":639};      /* where the professor stands */
 const DEX_UPS   = {"at":[50,100],"mult":[1,2,4],"earners":[1,2,3]};   /* what filling the Pokedex is worth */
 const SNORLAX   = {"dex":143,"lvl":30,"odds":0.3};  /* the one in the road, and how it comes */
-const BUILD     = "22 OCT 88e2cb6";  /* so you can tell whether an update took */
+const BUILD     = "28 OCT f96983b";  /* so you can tell whether an update took */
 const SLOW      = {"129":0.3};     /* species that learn slower than the curve says */
 const FOSSILS   = {"reviver":{"x":362,"y":665},"kinds":[{"item":"HELIX","dex":138,"odds":0.42,"name":"HELIX FOSSIL"},{"item":"DOME","dex":140,"odds":0.42,"name":"DOME FOSSIL"},{"item":"AMBER","dex":142,"odds":0.16,"name":"OLD AMBER"}]};  /* the lab on CINNABAR, and what it can do */
 const TRADERS   = {"92,412":{"gives":122,"wants":63},"281,52":{"gives":124,"wants":61},"287,106":{"gives":29,"wants":32},"293,218":{"gives":83,"wants":21},"68,390":{"gives":30,"wants":33},"173,320":{"gives":108,"wants":55},"68,389":{"gives":101,"wants":26},"67,390":{"gives":114,"wants":48},"69,390":{"gives":86,"wants":77}};  /* who will swap you what, from the ROM's own table */
@@ -435,6 +435,11 @@ const minutesFor = s => s<=START_STEPS
    than any town left. */
 const CAP_SLACK=50;
 const ROLL_MIN=15, SLOT_AT=[15,60,120], GRACE_MS=10000;
+/* Grass, water and the rod roll like the hunts throw: once every 15 minutes,
+   twice after an hour, three times after two, counted from the 15 minutes
+   being rolled for. So a long sitting is better odds per minute, not just
+   more minutes, and the rare things are what that buys. Shawe's rule. */
+const ROLLS_AT=[0,60,120];
 const BALL_AT=[0,60,120];          /* extra legendary ball per 15 min, at these minutes */
 const BALL_ODDS=0.14;              /* one Ultra Ball at an almost-fainted legendary */
 /* The first film. With a PIKACHU leading the squad, every ball thrown at
@@ -867,8 +872,8 @@ function encTable(kind){
   return (m && m.enc && m.enc[kind]) ? m.enc[kind] : null;
 }
 /* MEW is in every table there is, at a tenth of a percent: on land, in
-   water, and on the end of any rod. A long session is a dozen rolls, so
-   it is roughly one session in eighty. Rare enough to be a story.*/
+   water, and on the end of any rod. A three-hour session is 26 rolls,
+   so it is roughly one such session in forty. Rare enough to be a story.*/
 const MEW=151, MEW_ODDS=0.001, MEW_LEVEL=30;
 /* Isabel's birthday, 11 October 2026, by the phone's own clock. For that one
    day any table row at BDAY_RARE per cent or less is raised on a straight
@@ -1687,8 +1692,11 @@ function paintSession(){
       for(let n=0;n<benches && n<left.length;n++)
         if(Math.random()<left[n].odds) ss.got.push(left[n].dex);
     }else if(tbl){
-      const r=rollFrom(tbl);
-      ss.rolls.push(r); S.seen[String(r[0])]=1;
+      const at=ss.next*ROLL_MIN, n=ROLLS_AT.filter(m=>at>=m).length;
+      for(let k=0;k<n;k++){
+        const r=rollFrom(tbl);
+        ss.rolls.push(r); S.seen[String(r[0])]=1;
+      }
     }
     ss.next++; persist();
   }
